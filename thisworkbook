@@ -1,0 +1,72 @@
+Option Explicit
+
+Private Sub Workbook_Open()
+'********************************************************************************
+'           婲摦帪張棟乮儊僯儏乕傪捛壛乯
+'********************************************************************************
+    Dim cmdBarTarget    As CommandBar
+    Dim objNewMenu      As Object
+    Dim objNewItem      As Object
+    Dim varLoopVar      As Variant
+    Dim intStat         As Integer
+    Dim objNewSubItem   As Object
+
+    On Error Resume Next
+    
+    '/* 腊罐移偺庢摼 */
+    Set cmdBarTarget = Application.CommandBars("Worksheet Menu Bar")
+    cmdBarTarget.Visible = True
+    
+    '/* "奐敪僣乕儖"移偺桳柍联 */
+    intStat = 0
+    With cmdBarTarget
+        For Each varLoopVar In .Controls
+            If (varLoopVar.Caption = "Volte 僥僗僩僣乕儖(&J)") Then
+                intStat = 1
+                Exit For
+            End If
+        Next varLoopVar
+    End With
+    '/* "奐敪僣乕儖"移偑柍偄応崌偼移偵捛壛 */
+    If (intStat = 0) Then
+        Set objNewMenu = cmdBarTarget.Controls.Add(Type:=msoControlPopup, ID:=1, Temporary:=True)
+        objNewMenu.Caption = "Volte 僥僗僩僣乕儖(&J)"
+        intStat = 2
+    '/* "奐敪僣乕儖"移偑偁傞応崌偼攝壓偺"僞僀僩儖嶌惉"移偺懚嵼联 */
+    Else
+        intStat = 0
+        Set objNewMenu = cmdBarTarget.Controls.Item("Volte 僥僗僩僣乕儖(&J)")
+        With objNewMenu
+            For Each varLoopVar In .Controls
+                If (varLoopVar.Caption = "寢壥傪嶌惉(&T)...") Then
+                    intStat = 1
+                    Exit For
+                End If
+            Next varLoopVar
+        End With
+        '/* "僞僀僩儖嶌惉"移偑柍偄応崌偼捛壛  */
+        If (intStat = 0) Then
+            intStat = 2
+        End If
+    End If
+
+    '/* 棉袄掕媊移偺捛壛 */
+    If (intStat = 2) Then
+'        Set objNewItem = objNewMenu.Controls.Add(Type:=msoControlButton, ID:=1, Temporary:=True)
+'        objNewItem.Caption = "扨懱僥僗僩働乕僗傪怴婯(&E)"
+'        objNewItem.OnAction = GD_THIS_WORKBOOK_NAME & "!createNewCase"
+        
+        Set objNewItem = objNewMenu.Controls.Add(Type:=msoControlButton, ID:=1, Temporary:=True)
+        objNewItem.Caption = "寢壥傪嶌惉(&T)..."
+        objNewItem.OnAction = GD_THIS_WORKBOOK_NAME & "!getTitle"
+        
+
+    
+        Set objNewItem = objNewMenu.Controls.Add(Type:=msoControlButton, ID:=1, Temporary:=True)
+        objNewItem.Caption = "僣乕儖傪暵傔傞(&X)"
+        objNewItem.BeginGroup = True
+        objNewItem.OnAction = GD_THIS_WORKBOOK_NAME & "!delMenu"
+    End If
+
+End Sub
+
