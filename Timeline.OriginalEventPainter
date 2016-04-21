@@ -1,0 +1,1121 @@
+/*==================================================
+ *   Event Painter　(Timeline selector Painter)
+ *==================================================
+ */
+
+
+Timeline.OriginalEventPainter = function(params) {
+    this._params = params;
+    this._onSelectListeners = [];
+    this._eventPaintListeners = [];
+    
+    this._frc = null;
+    
+    this._eventTheme = this._params.theme.event;
+};
+
+Timeline.OriginalEventPainter.prototype.initialize = function(band, timeline) {
+    this._band = band;
+    this._timeline = timeline;
+    
+    this._backLayer = null;
+    this._eventLayer = null;
+    this._lineLayer = null;
+    this._highlightLayer = null;
+};
+
+Timeline.OriginalEventPainter.prototype.getType = function() {
+    return 'original';
+};
+
+Timeline.OriginalEventPainter.prototype._prepareForPainting = function() {
+    var band = this._band;
+        
+    if (this._backLayer == null) {
+        this._backLayer = this._band.createLayerDiv(0, "timeline-band-events");
+        this._backLayer.style.visibility = "hidden";
+        
+        var eventLabelPrototype = document.createElement("span");
+        eventLabelPrototype.className = "timeline-event-label";
+        this._backLayer.appendChild(eventLabelPrototype);
+        this._frc = MVCore.Graphics.getFontRenderingContext(eventLabelPrototype);
+    }
+    this._frc.update();
+    this._tracks = [];
+    
+    if (this._highlightLayer != null) {
+        band.removeLayerDiv(this._highlightLayer);
+    }
+    this._highlightLayer = band.createLayerDiv(105, "timeline-band-highlights");
+    this._highlightLayer.style.display = "none";
+    
+    if (this._lineLayer != null) {
+        band.removeLayerDiv(this._lineLayer);
+    }
+    this._lineLayer = band.createLayerDiv(110, "timeline-band-lines");
+    this._lineLayer.style.display = "none";
+    
+    if (this._eventLayer != null) {
+        band.removeLayerDiv(this._eventLayer);
+    }
+    this._eventLayer = band.createLayerDiv(115, "timeline-band-events");
+    this._eventLayer.style.display = "none";
+    
+    this._outLeft = this._timeline.getDocument().getElementById("timeline-out-left");
+    this._outRight = this._timeline.getDocument().getElementById("timeline-out-right");
+    
+    while (this._outLeft.firstChild) {
+        this._outLeft .removeChild(this._outLeft.firstChild);
+    }
+    while (this._outRight .firstChild) {
+        this._outRight .removeChild(this._outRight.firstChild);
+    }
+    
+    var lines_top = this._timeline.getDocument().createElement("div");
+    //3892 mod start
+   // var baseLineY = _general.userDeptVis ? 24 : 44;
+    var baseLineY = _general.userDeptVis ? 56 : 76;
+  //3892 mod end
+    lines_top.style.height = baseLineY + "px";
+    this._lineLayer.appendChild(lines_top);
+    
+    this._prepareForEventLayer(24);
+};
+
+Timeline.OriginalEventPainter.prototype._prepareForEventLayer = function (baseLineY) {
+    var yIndex = 0;
+    var doc = this._timeline.getDocument();
+    var importantLabel = doc.createElement("div");
+    importantLabel.id = Timeline.EventUtils.createImportantLabelID();
+    importantLabel.style.height = "16px";
+    importantLabel.style.position = "relative";
+    this._eventLayer.appendChild(importantLabel);
+    var importantIcon = doc.createElement("div");
+    importantIcon.id = Timeline.EventUtils.createImportantIconID();
+    importantIcon.style.height = "16px";
+    importantIcon.style.position = "relative";
+    this._eventLayer.appendChild(importantIcon);
+    
+    //3892 add start
+    var subImportantIcon = doc.createElement("div");
+    subImportantIcon.id = Timeline.EventUtils.createImportantIconID(true);
+    subImportantIcon.style.height = "16px";
+    subImportantIcon.style.position = "relative";
+    subImportantIcon.style.borderStyle = "dotted";
+    subImportantIcon.style.borderWidth = "1px 0 0";
+    this._eventLayer.appendChild(subImportantIcon);
+    
+    var subImportantLabel = doc.createElement("div");
+    subImportantLabel.id = Timeline.EventUtils.createImportantLabelID(true);
+    subImportantLabel.style.height = "16px";
+    subImportantLabel.style.position = "relative";
+    this._eventLayer.appendChild(subImportantLabel);
+    //3892 add end
+    
+    //mark
+    var out_left = this._outLeft;
+    var out_right = this._outRight;
+       
+    if(!_general.userDeptVis) {
+         //only for position
+         var dept_top = doc.createElement("div");
+         dept_top.style.position = "relative";
+         dept_top.style.minHeight= "20px";
+         this._eventLayer.appendChild(dept_top);
+    }
+    for (var j = 0; j < departmentData.items.length; j++) {
+         yIndex = yIndex + 1;
+         var item = departmentData.items[j];
+         var deptCATCode = item.deptCode == null ? "report" : item.deptCode;
+
+         var deptCATDiv = doc.createElement("div");
+         deptCATDiv.id = Timeline.EventUtils.createDeptIconContainerID(deptCATCode, deptCATCode);
+         deptCATDiv.style.position = "relative";
+         deptCATDiv.style.minHeight= "20px";
+         deptCATDiv.className= Timeline.EventUtils.createDeptIconContainerClass(deptCATCode, "cat");
+         this._eventLayer.appendChild(deptCATDiv);
+
+         //mark
+         var mark_left = doc.createElement("div");
+         var mark_right = doc.createElement("div");
+         mark_left.id = Timeline.EventUtils.createOutMarkContainerID(deptCATCode, deptCATCode, "l");
+         mark_right.id = Timeline.EventUtils.createOutMarkContainerID(deptCATCode, deptCATCode, "r");
+         mark_left.className = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode, "cat");
+         mark_right.className = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode, "cat");
+         mark_left.style.position = "relative";
+         mark_left.style.minHeight= "20px";
+         mark_right.style.position = "relative";
+         mark_right.style.minHeight= "20px";
+         out_left.appendChild(mark_left);
+         out_right.appendChild(mark_right);
+
+         if (item.children != null) {
+             for (var k = 0; k < item.children.length; k++) {
+                 yIndex = yIndex + 1;
+                 var child = item.children[k];
+                 var deptCode = child.deptCode == null ? k : child.deptCode;
+
+                 var deptDiv = doc.createElement("div");
+                 deptDiv.id = Timeline.EventUtils.createDeptIconContainerID(deptCode, deptCATCode);
+                 deptDiv.style.position = "relative";
+                 deptDiv.style.minHeight= "20px";
+                 deptDiv.className= Timeline.EventUtils.createDeptIconContainerClass(deptCATCode, "item");
+                 this._eventLayer.appendChild(deptDiv);
+
+                 //mark
+                 var mark_left = doc.createElement("div");
+                 var mark_right = doc.createElement("div");
+                 mark_left.id = Timeline.EventUtils.createOutMarkContainerID(deptCode, deptCATCode, "l");
+                 mark_right.id = Timeline.EventUtils.createOutMarkContainerID(deptCode, deptCATCode, "r");
+                 mark_left.className = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode, "item");
+                 mark_right.className = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode, "item");
+                 mark_left.style.position = "relative";
+                 mark_left.style.minHeight= "20px";
+                 mark_right.style.position = "relative";
+                 mark_right.style.minHeight= "20px";
+                 out_left.appendChild(mark_left);
+                 out_right.appendChild(mark_right);
+             }    
+         }
+     }
+};
+
+Timeline.OriginalEventPainter.prototype.toggleEvent = function() {
+    if(this._tracks != null) {
+        this._tracks.splice(0, this._tracks.length);
+    }
+     if(!_general.userDeptVis) {
+         //only for position
+         this._tracks.push("userDept");
+     }
+    for (var j = 0; j < departmentData.items.length; j++) {
+         var item = departmentData.items[j];
+         var tempDeptCode = item.deptCode;
+         var deptCATCode = tempDeptCode == null ? "report" : tempDeptCode;    
+         var expand = departmentData.items[j].expand;
+           
+         var deptCatConClass = Timeline.EventUtils.createDeptIconContainerClass(deptCATCode ,"cat");
+         var deptConClass = Timeline.EventUtils.createDeptIconContainerClass(deptCATCode ,"item");
+         var deptCatLineClass = Timeline.EventUtils.createDeptLineClass(deptCATCode ,"cat");
+         var deptLineClass = Timeline.EventUtils.createDeptLineClass(deptCATCode ,"item");
+         
+         var markCatConClass = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode ,"cat");
+         var markConClass = Timeline.EventUtils.createMarkIconContainerClass(deptCATCode ,"item"); 
+           
+          
+           this._tracks.push(deptCATCode);
+           if(expand && item.children != null) {
+             for (var k = 0; k < item.children.length; k++) {
+                 var tempDeptCode = item.children[k].deptCode;
+                 var deptCode = tempDeptCode == null ? k : tempDeptCode;    
+                 this._tracks.push(deptCode);
+             }                  
+           }
+
+         if (!expand) {
+             MVCore.jQuery("." + deptCatConClass).css("visibility", "visible");
+             MVCore.jQuery("." + deptCatLineClass).css("visibility", "visible");
+ 
+             MVCore.jQuery("." + deptConClass).css("display", "none");
+             MVCore.jQuery("." + deptLineClass).css("display", "none");
+          
+             MVCore.jQuery("." + markCatConClass).css("visibility", "visible");
+             MVCore.jQuery("." + markConClass).css("display", "none");
+         } else {
+             if(_general.TimelineExpandVisibleMode == "Visible") {
+                 MVCore.jQuery("." + deptCatConClass).css("visibility", "visible");
+                 MVCore.jQuery("." + deptCatLineClass).css("visibility", "visible");
+             } else if(_general.TimelineExpandVisibleMode == "LineOnlyVisible") {
+                 MVCore.jQuery("." + deptCatConClass).css("visibility", "hidden");
+                 MVCore.jQuery("." + deptCatLineClass).css("visibility", "visible");
+             } else {
+                 MVCore.jQuery("." + deptCatConClass).css("visibility", "hidden");
+                 MVCore.jQuery("." + deptCatLineClass).css("visibility", "hidden");
+             }
+             
+             MVCore.jQuery("." + deptConClass).css("display", "block");
+             MVCore.jQuery("." + deptLineClass).css("display", "block");
+             
+             MVCore.jQuery("." + markCatConClass).css("visibility", "visible");
+             MVCore.jQuery("." + markConClass).css("display", "block");
+        }
+    }
+    
+    this._band.updateEventTrackInfo(this._tracks.length, this._eventTheme.track.height);
+    this._timeline._autoYCheck(true);
+};
+
+Timeline.OriginalEventPainter.prototype.paint = function() {
+
+    var eventSource = this._band.getEventSource();
+    eventSource.clear();
+    
+    eventSource.loadMatrix(this._band);
+//    var itImport = eventSource.getImptInfoAllIterator();
+//    var itDept = eventSource.getDeptAllIterator();
+//    var itReport = eventSource.getReportAllIterator();
+//    if (!itImport.hasNext() && !itDept.hasNext() && !itReport.hasNext()) {
+//        return;
+//    }
+    
+    
+    this._fireEventPaintListeners('paintStarting', null, null);
+    this._prepareForPainting();
+       
+
+    this.paintEvent();    
+    this._highlightLayer.style.display = "block";
+    this._lineLayer.style.display = "block";
+    this._eventLayer.style.display = "block";
+    
+    this.toggleEvent();
+ 
+    this._fireEventPaintListeners('paintEnded', null, null); 
+    
+};
+
+Timeline.OriginalEventPainter.prototype.paintEvent = function() {
+    this.drawTimelineIcons(40);
+};
+/**
+ * タイムラインに、アイコンをペイントする
+ */
+Timeline.OriginalEventPainter.prototype.drawTimelineIcons = function() {
+    var baseLineY = _general.userDeptVis ? 17 : 37;
+    this.drawLines(baseLineY);
+    this.drawImportant();
+    // 3892 add
+    this.drawSubImportant();
+    this.drawDeptIcons();
+    if (_patient.deathDay != null && _patient.deathDay != undefined) {
+        this.drawDeathDate();
+    }
+    this.drawReportIcons(baseLineY - 4);
+    this.drawSelectorDocExistsMark(baseLineY - 4);
+    this.drawHsptlztnFrames(baseLineY + 12);
+};
+
+/**
+ * 死亡日ラベルとアイコンをペイントする
+ */
+Timeline.OriginalEventPainter.prototype.drawDeathDate = function() {
+    var deathDay = _patient.deathDay;
+    var deathDayTipLabel = deathDay.replace(/,/g, "/");
+    var deathDayValueArray = deathDay.split(",");
+    var deathDate = new Date(deathDayValueArray[0],
+            Number(deathDayValueArray[1]) - 1, deathDayValueArray[2]);
+    this.drawDeathDayLabel(deathDate);
+    this.drawDeathDayIcon(deathDate, deathDayTipLabel);
+};
+
+/**
+ * 死亡日アイコンをペイントする
+ * @param x 横座標
+ * @param icon アイコン
+ * @param tooltip ツールチープ
+ * @param docs 文書
+ */
+Timeline.OriginalEventPainter.prototype.drawDeathDayIcon = function(deathDate, deathDayTipLabel) {
+    var x = this._band.dateToPixelOffset(deathDate);
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.createImportantIconID());
+    var className = Timeline.EventUtils.createEventClass("imptInfo");
+    var icon = imgRoot + "022/ImportantIcon.png";
+    var tooltip = deathDayTipLabel;
+    this._paintEventTape(x, yc, icon, tooltip, "", className);
+};
+/**
+ * 死亡日ラベルをペイントする
+ * @param x 横座標
+ * @param text 文字列
+ */
+Timeline.OriginalEventPainter.prototype.drawDeathDayLabel = function(deathDate) {    
+    var x = this._band.dateToPixelOffset(deathDate);
+    var text = $("#mrvShibou").val();
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.createImportantLabelID());
+    this._paintEventLabel(x, yc, text, "red");
+};
+
+/**
+ * 重要性ラベルとアイコンをペイントする
+ */
+Timeline.OriginalEventPainter.prototype.drawImportant = function() {
+    var eventSource = this._band.getEventSource();    
+    var iterator = eventSource.getImptInfoAllIterator();
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        this.drawImportantLabel(evt, false);
+        this.drawImportantIcon(evt, false);
+    }
+};
+/**
+ * サブ重要性ラベルとアイコンをペイントする
+ */
+// 3892 add
+Timeline.OriginalEventPainter.prototype.drawSubImportant = function() {
+    var eventSource = this._band.getEventSource();    
+    var iterator = eventSource.getSubImptInfoAllIterator();
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        this.drawImportantLabel(evt, true);
+        this.drawImportantIcon(evt, true);
+    }
+};
+/**
+ * 重要性ラベルをペイントする
+ * @param x 横座標
+ * @param text 文字列
+ */
+//3892 mod 
+Timeline.OriginalEventPainter.prototype.drawImportantLabel = function(evt, isSub) {    
+    var x = this._band.getEventXPixelOffset(evt.getID());
+    var text = evt.getText();
+    if (text == undefined || text == "") return;
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.createImportantLabelID(isSub));
+    if (text.length > 7) {
+        var displayText = text.substring(0, 6) + "...";
+        this._paintEventLabel(x, yc, displayText, "red", text);
+    } else {
+        this._paintEventLabel(x, yc, text, "red");
+    }
+};
+
+/**
+ * 重要性アイコンをペイントする
+ * @param x 横座標
+ * @param icon アイコン
+ * @param tooltip ツールチープ
+ * @param docs 文書
+ */
+//3892 mod 
+Timeline.OriginalEventPainter.prototype.drawImportantIcon = function(evt, isSub) {
+    var x = this._band.getEventXPixelOffset(evt.getID());
+    var icon = evt.getIcon();
+    if (icon == undefined || icon == "") return;
+    var tooltip = evt.getTooltip();
+    var eventId = evt.getID();
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.createImportantIconID(isSub));
+
+    var classSufix = isSub ? "subImptInfo" : "imptInfo";
+    var className = Timeline.EventUtils.createEventClass(classSufix);
+    icon = imgRoot + "022/" + icon + ".png";
+    this._paintEventTape(x, yc, icon, tooltip, eventId, className);
+};
+
+
+Timeline.OriginalEventPainter.prototype.filterOutDocByDept = function(iterator) {    
+    var obj = {};
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        var eventend = evt.getEventTime();
+        var docsCount = evt.getDocs().length;;
+        var colorGroup = evt.getDeptColorGroup();
+        if(colorGroup == "") {
+            colorGroup = evt.getColorGroup();
+        }
+        var eventID = evt.getID();
+        var parts = eventID.split('_');
+        var cellIndex = parts[1]; 
+        var deptCode = parts[2]; 
+        var deptCATCode = parts[3];
+                
+        if(cellIndex < 0) {
+            var deptId = Timeline.EventUtils.createOutMarkContainerID(deptCode, deptCATCode, "l");
+            if(obj[deptId] == null) {
+                obj[deptId] = {
+                                lCount: docsCount,
+                                rCount: 0,
+                                lDate:eventend,
+                                rDate: _latestDocDate,
+                                colorGroup:colorGroup
+                              };
+            } else {
+                var outerDocsInfo = obj[deptId];
+                outerDocsInfo.lCount = outerDocsInfo.lCount + docsCount;
+                 if (eventend > outerDocsInfo.lDate) {
+                     outerDocsInfo.lDate = eventend;
+                 }
+            }
+        }
+        
+        if(cellIndex > 59) {
+            var deptId = Timeline.EventUtils.createOutMarkContainerID(deptCode, deptCATCode, "r");
+            if(obj[deptId] == null) {
+                obj[deptId] = {
+                                lCount: 0,
+                                rCount: docsCount,
+                                lDate:_firstDocDate,
+                                rDate: eventend,
+                                colorGroup:colorGroup
+                              };
+            } else {
+                var outerDocsInfo = obj[deptId];
+                outerDocsInfo.rCount = outerDocsInfo.rCount + docsCount;
+                if (eventend < outerDocsInfo.rDate) {
+                    outerDocsInfo.rDate = eventend;
+                }
+            }
+        }
+    } 
+    return obj;
+};
+
+/**
+ * セレクトに文書存在マークをペイントする
+ * @param y 縦座標
+ * @param colorGroup 色グループ
+ * @param outerDocsInfo 範囲外文書情報
+ */
+Timeline.OriginalEventPainter.prototype.drawSelectorDocExistsMark = function() {
+    var eventSource = this._band.getEventSource();    
+    var iterator = eventSource.getDeptAllIterator();
+    
+    var markByDept = this.filterOutDocByDept(iterator);    
+    for(var pro in markByDept) {
+        var outObj = markByDept[pro];
+        var yc =  this._timeline.getDocument().getElementById(pro);
+        this.drawDocExistsMark(yc, outObj);
+    }
+    
+    var iteratorReport = eventSource.getReportAllIterator();    
+    var markByRept = this.filterOutDocByDept(iteratorReport);
+    for(var pro in markByRept) {
+        var outObj = markByRept[pro];
+        var yc =  this._timeline.getDocument().getElementById(pro);
+        this.drawDocExistsMark(yc, outObj);
+    }
+};
+
+/**
+ * 文書存在マークをペイントする
+ * @param y 縦座標
+ * @param outObj 範囲外文書情報
+ */
+Timeline.OriginalEventPainter.prototype.drawDocExistsMark = function(yc, outObj) {
+    var _this = this;
+    var colorGroup = outObj.colorGroup;
+    if (!colorGroup) {
+        colorGroup = 10;
+    }
+    if (outObj.lCount > 0) {
+        var img = "images/matrix/036/036_" + ColorUtil.picCrGroup[colorGroup];
+        var tooltip = outObj.lCount + _textFormats.LayerMakerCountsUnit;
+        this._paintEventMark(yc, img, tooltip, outObj);
+        //add event for left mark 
+        var onClick = function(elmt, evt, target) {
+            _this._band.setMinVisibleDate(outObj.lDate);
+            //viewPort.layout();
+            Timeline.Manager.curDisplayDates = [_this._band.getMinVisibleDate(),_this._band.getMaxVisibleDate()];
+        };
+        MVCore.DOM.registerEvent(yc, "click", onClick); 
+    }
+    if (outObj.rCount > 0) {
+        var img = "images/matrix/035/035_" + ColorUtil.picCrGroup[colorGroup];
+        var tooltip = outObj.rCount + _textFormats.LayerMakerCountsUnit;
+        this._paintEventMark(yc, img, tooltip, outObj);       
+        //add event for right mark 
+        var onClick = function(elmt, evt, target) {
+            //var markDate = _this._band._etherPainter.roundDownToMark(outObj.rDate,1);
+            //_this._band.setMaxVisibleDate(markDate);
+            _this._band.setMaxVisibleMarkDate(outObj.rDate);
+            //viewPort.layout();
+            Timeline.Manager.curDisplayDates = [_this._band.getMinVisibleDate(),_this._band.getMaxVisibleDate()];
+        };
+        MVCore.DOM.registerEvent(yc, "click", onClick); 
+    }          
+};
+/**
+ * 範囲外文書をペイントする
+ * @param outerDoc 範囲外文書
+ */
+Timeline.OriginalEventPainter.prototype._paintEventMark = function(containerDiv, url, title,outObj) {
+    var tapeDiv = containerDiv;
+    if(title != null) {
+        tapeDiv.title = title;
+    } 
+    var backgroundRepeat = "no-repeat";
+    if(url != null) {
+      tapeDiv.style.backgroundImage = "url(" + url + ")";
+      tapeDiv.style.backgroundRepeat = backgroundRepeat;
+    }  
+    
+    return {
+        elmt:   tapeDiv
+    };
+};
+
+/**
+ * 部門アイコンをペイント
+ */
+Timeline.OriginalEventPainter.prototype.drawDeptIcons = function() {
+    var eventSource = this._band.getEventSource();    
+    var iterator = eventSource.getDeptAllIterator();
+    
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        this.drawDocIcon(evt);
+    } 
+};
+/**
+ * 文書アイコンをペイント
+ * @param evt Event
+ */
+Timeline.OriginalEventPainter.prototype.drawDocIcon = function(evt) {
+    var eventId = evt.getID();
+    var x = this._band.getEventXPixelOffset(eventId);
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.transEventID2ContainerID(eventId));
+    var icon = evt.getIcon();
+    var deptCode = evt.getDeptCode();
+    var docs = evt.getDocs();   
+    var tooltip = docs.length + _textFormats.LayerMakerCountsUnit;
+    
+    if (icon == undefined || icon == "") return;
+    var img = (function () {
+        var ret = imgRoot;
+        var multi = false;
+        if (icon.indexOf("Multi-") == 0) {
+            multi = true;
+            icon = icon.substring(6);
+        }
+        switch (icon) {
+            case "FirstTimeIcon":
+                ret += multi ? "007start/007_" : "006start/006_";
+                break;
+            case "TimelineIcon":
+                ret += multi ? "009pause/009_" : "008pause/008_";
+                break;
+            case "OperationTimelineIcon":
+                ret += multi ? "011stop/011_" : "010stop/010_";
+                break;
+        }
+        return ret + ColorUtil.picCrGroup[ColorUtil.getColorGroupOfDept(deptCode)];
+    })();
+     
+    var className = Timeline.EventUtils.createEventClass("dept");
+    this._paintEventTape(x, yc, img, tooltip, eventId, className);
+};
+/**
+ * 全てラインをペイントする
+ * @param baseLineY ベースライン
+ */
+Timeline.OriginalEventPainter.prototype.drawLines = function (baseLineY) {
+    var yIndex = 0;    
+    for (var j = 0; j < departmentData.items.length; j++) {
+        yIndex = yIndex + 1;
+        var item = departmentData.items[j];
+        var deptCATCode = item.deptCode == null ? "report" : item.deptCode;          
+        var y = yIndex * 20 + baseLineY;
+        var colorGroup = item.colorGroup;
+        var color = ColorUtil.getColor(colorGroup, 1);
+        var lineClass = Timeline.EventUtils.createDeptLineClass(deptCATCode,"cat"); //only for display
+        this.drawLine(y, color, lineClass, yIndex);
+          
+        if (item.children != null) {
+             for (var k = 0; k < item.children.length; k++) {
+                 yIndex = yIndex + 1;
+                 var child = item.children[k];
+                 var y = yIndex * 20 + baseLineY;
+                 var colorGroup = child.colorGroup;
+                 var color = ColorUtil.getColor(colorGroup, 1);
+                 var lineClass = Timeline.EventUtils.createDeptLineClass(deptCATCode, "item"); //only for display
+                 this.drawLine(y, color, lineClass);
+             };
+        };
+    };
+     
+     this._lines_bottom = this._timeline.getDocument().createElement("div");
+     this._lines_bottom.style.height = "0px";
+     this._lineLayer.appendChild(this._lines_bottom);
+};
+
+/**
+ *　ラインをペイントする
+ * @param top 縦座標
+ * @param color 色
+ * @param lineClass　ラインクラス
+ */
+Timeline.OriginalEventPainter.prototype.drawLine = function (top, color, lineClass) {
+    var doc = this._timeline.getDocument();
+        
+    var lineDiv = doc.createElement("div");
+    lineDiv.className = "timeline-dept-lines " + lineClass;
+    lineDiv.style.borderColor = color;
+//    if(lineClass.indexOf("-item") > 0) {
+//        lineDiv.style.display = "none";
+//    }
+    this._lineLayer.appendChild(lineDiv);
+    
+    return {
+        color:   color,
+        top:    top,
+        elmt:   lineDiv
+    };
+};
+
+Timeline.OriginalEventPainter.prototype.drawReportIcons = function(baseLineY) {
+    var eventSource = this._band.getEventSource();
+    var iterator = eventSource.getReportAllIterator();
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        this.drawReportIcon(evt);
+    } 
+};
+
+/**
+ * レポートアイコンをペイントする
+ * @param evt Event
+ */
+Timeline.OriginalEventPainter.prototype.drawReportIcon = function(evt) {
+    var eventId = evt.getID();
+    var x = this._band.getEventXPixelOffset(eventId);
+    var yc =  this._timeline.getDocument().getElementById(Timeline.EventUtils.transEventID2ContainerID(eventId));
+    var icon = evt.getIcon();
+    var colorGroup = evt.getColorGroup();
+    var docs = evt.getDocs();   
+    var tooltip = docs.length + _textFormats.LayerMakerCountsUnit;
+
+
+    // レポートアイコンをペイント
+        var img = (function () {
+            var single = true;
+            var ret = imgRoot;
+            if (icon.indexOf("Multi-") == 0) {
+                single = false;
+                icon = icon.substring(6);
+            }
+            switch (icon) {
+                case "BM0001":
+                    ret += single ? "012/012_" : "013/013_";
+                    break;
+                case "BM0002":
+                    ret += single ? "014/014_" : "015/015_";
+                    break;
+                case "BM0003":
+                    ret += single ? "016/016_" : "017/017_";
+                    break;
+                case "BM0004":
+                    ret += single ? "018/018_" : "019/019_";
+                    break;
+                default:
+                    ret += single ? "020/020_" : "021/021_";
+            }
+            return ret + ColorUtil.picCrGroup[colorGroup];
+        })();
+        
+        var className = Timeline.EventUtils.createEventClass("report");
+        this._paintEventTape(x, yc, img, tooltip, eventId, className);   
+};
+
+/**
+ * 入院期間枠
+ */
+Timeline.OriginalEventPainter.prototype.drawHsptlztnFrames = function(baseLineY) {
+    var minDate = this._band.getMinDate();
+    var maxDate = this._band.getMaxDate();
+    var admissions = [];
+    // 入院期間と重複の日付を取得する
+    for (var i = 0; i < _patient.Admissions.length; i++) {
+        var admission = newAdmission(_patient.Admissions[i]);
+        if (admission.start >= maxDate
+                || (admission.end !="" && admission.end <= minDate)) {
+            continue;
+        }
+        var overlaps = [];
+        if (patientId == admission.patientId) {
+            for (var j = 0; j < admissions.length; j++) {
+                if (admissions[j].start >= maxDate
+                        || admissions[j].end <= minDate) {
+                    continue;
+                }
+                var overlap = this._getOverlap(admission, admissions[j]);
+                if (overlap != null) {
+                    overlaps.push(overlap);
+                }
+            }
+        }
+        admissions = admissions.concat(overlaps);
+        admissions.push(admission);
+    }
+    // 入院期間と重複の日付をペイントする
+    for (var i = 0; i < admissions.length; i++) {
+        var admission = admissions[i];
+        if (admission.fullOver === true) {
+            continue;
+        }
+        var RECT = {
+                y: baseLineY,
+                //height: timeSelector.dy - 39 - baseLineY
+                height: this._band._bandInfo.width
+        };
+        if (admission.left != undefined) {
+            RECT.x = admission.left;
+        } else {
+           // RECT.x = timeSelector.getXOfDate(admission.start);
+            RECT.x = this._band.dateToPixelOffset(admission.start);
+        }
+        if (RECT.x < 0) {
+            RECT.x = 0;
+        //} else if (RECT.x > timeSelector.dx) {
+        } else if (RECT.x > this._timeline.getPixelLength()) {
+            continue;
+        }
+        var rectRight;
+        if (admission.right != undefined) {
+            rectRight = admission.right;
+        } else {
+//            rectRight = admission.end != ""
+//                                ? timeSelector.getXOfDate(admission.end)
+//                                : timeSelector.dx + 1;
+            rectRight = admission.end != ""
+                ? this._band.dateToPixelOffset(admission.end)
+                : this._timeline.getPixelLength() + 1;
+        }
+//        if (rectRight > timeSelector.dx + 1) {
+//            rectRight = timeSelector.dx + 1;
+//        }
+        if (rectRight > this._timeline.getPixelLength() + 1) {
+            rectRight = this._timeline.getPixelLength() + 1;
+        }
+        RECT.width = rectRight - RECT.x;
+        var colorGroup = ColorUtil.getColorGroupOfDept(admission.departmentCode);
+        if (admission.type == "overlap") {
+            // after modify
+//            if (RECT.x % timeSelector.cellWidth != 0) {
+//                RECT.x += timeSelector.cellWidth - RECT.x % timeSelector.cellWidth;
+//            }
+            // 重複日付
+            this.drawOverlap(
+                RECT,
+                ColorUtil.getColor(colorGroup, 2),
+                ColorUtil.getColor(colorGroup, 0),
+                ColorUtil.getColor(colorGroup, 5),
+                admission.tooltip);
+        } else {
+            // 入院期間日付
+            this.drawHsptlztn(
+                RECT,
+                ColorUtil.getColor(colorGroup, 2),
+                ColorUtil.getColor(colorGroup, 0),
+                _general.Admission.backAlpha,
+                admission);
+        }
+    }
+};
+
+/**
+ * 重複日付を取得する
+ * @param tSpan1 タイムスパン1
+ * @param tSpan2 タイムスパン2
+ * @returns 重複日付
+ */
+Timeline.OriginalEventPainter.prototype._getOverlap =  function(tSpan1, tSpan2) {
+    var _this =  this;
+    if (tSpan1.start > tSpan2.end
+            || (tSpan1.end != "" && tSpan2.start > tSpan1.end)) {
+        return null;
+    }
+    
+    var minDate = this._band.getMinDate();
+    var maxDate = this._band.getMaxDate();
+
+    var overlap = {type: "overlap"};
+    var setSt = function (tSpan) {
+//        var x = timeSelector.getXOfDate(tSpan.start);
+//        x -= x % timeSelector.cellWidth;      
+//        tSpan.start = timeSelector.getDateOfX(x);       
+        tSpan.start = _this._band._etherPainter.roundDownToMark(tSpan.start);
+        var x = _this._band.dateToPixelOffset(tSpan.start);
+        if (tSpan.start < minDate) {
+            tSpan.start = minDate;
+        }
+        overlap.start = tSpan.start;
+        overlap.left = x;
+        tSpan.left = x;
+    };
+    var setEd = function (tSpan) {
+        var x;
+        if (tSpan.end === "") {
+           // x = timeSelector.dx;
+            x = _this._timeline.getPixelLength();
+            tSpan.end = maxDate;
+        } else {
+           // x = timeSelector.getXOfDate(tSpan.end);
+            tSpan.end = _this._band._etherPainter.roundUpToMark(tSpan.end);
+            x = _this._band.dateToPixelOffset(tSpan.end);
+        }
+       // x += timeSelector.cellWidth - x % timeSelector.cellWidth;
+      //  tSpan.end = timeSelector.getDateOfX(x);
+        if (tSpan.end > maxDate) {
+            tSpan.end = maxDate;
+        }
+        tSpan.end.setDate(tSpan.end.getDate() + 1);
+        overlap.end = tSpan.end;
+        overlap.right = x;
+        tSpan.right = x;
+    };
+
+    if (tSpan1.start > tSpan2.start) {
+        setSt(tSpan1);
+        overlap.tooltip = tSpan2.tooltip + "<br>" + tSpan1.tooltip;
+        overlap.departmentCode = tSpan2.departmentCode;
+        if (tSpan1.end != "" && tSpan1.end < tSpan2.end) {
+            setEd(tSpan1);
+            tSpan1.fullOver = true;
+        } else {
+            setEd(tSpan2);
+            tSpan1.start = overlap.end;
+            tSpan2.end = overlap.start;
+            tSpan1.left = overlap.right;
+            tSpan2.right = overlap.right;
+        }
+    } else {
+        setSt(tSpan2);
+        overlap.tooltip = tSpan1.tooltip + "<br>" + tSpan2.tooltip;
+        overlap.departmentCode = tSpan1.departmentCode;
+        if (tSpan1.end != "" && tSpan1.end < tSpan2.end) {
+            setEd(tSpan1);
+            tSpan1.end = overlap.start;
+            tSpan2.start = overlap.end;
+            tSpan1.right = overlap.right;
+            tSpan2.left = overlap.right;
+        } else {
+            setEd(tSpan2);
+            tSpan2.fullOver = true;
+        }
+    }
+    return overlap;
+};
+/**
+ * DIVに重複日付枠をペイントする
+ * @param RECT 枠範囲
+ * @param fill 充填色
+ * @param stroke 枠色
+ * @param hLineFill 太線色
+ * @param tooltip ツールチップ文字列
+ */
+Timeline.OriginalEventPainter.prototype.drawOverlap = function(RECT, fill, stroke, hLineFill, tooltip) {
+    var doc = this._timeline.getDocument();
+    var LINE_WIDTH = 4;
+    var rectDiv = doc.createElement("div");
+    rectDiv.style.position = "absolute";
+    rectDiv.style.left = RECT.x + "px";
+    rectDiv.style.top = RECT.y + "px";
+    rectDiv.style.width = RECT.width + "px";
+    rectDiv.style.height = "100%";
+    rectDiv.style.zIndex = 10;
+    rectDiv.className = "HsptlztnOverlap";  
+    rectDiv.title = tooltip;
+    
+    function drawLine(x) {
+        var lineDiv = doc.createElement("div");
+        lineDiv.style.width = "0px";
+        lineDiv.style.height = "100%";
+        lineDiv.style.left = x + "px";
+        lineDiv.style.position = "absolute";
+        //lineDiv.style.borderColor = stroke;
+        lineDiv.style.borderLeft = LINE_WIDTH + "px solid " + hLineFill;      
+        rectDiv.appendChild(lineDiv);
+    }
+    var markWidth = this._band.getCellWidth();
+    for(var x = RECT.width; x >= 0 ; x = x - markWidth) {
+        if(x == RECT.width) {
+            drawLine(x);
+        } else {
+            drawLine(x + LINE_WIDTH / 2);
+        }
+            
+    }
+    
+    this._highlightLayer.appendChild(rectDiv);
+    
+    return {
+         elmt:   rectDiv
+    };;
+};
+/**
+ * DIVに入院期間枠をペイントする
+ * @param RECT 枠範囲
+ * @param title 入院部タイトル
+ * @param fill 充填色
+ * @param stroke 枠色
+ * @param alpha アルファ値
+ * @param tooltip ツールチップ文字列
+ */
+Timeline.OriginalEventPainter.prototype.drawHsptlztn = function(RECT, fill, stroke, alpha, admission) {
+    var doc = this._timeline.getDocument();
+    var title = admission.departmentName;
+    var tooltip = admission.tooltip;
+    var mergePatientId = admission.patientId;
+    var rectDiv = doc.createElement("div");
+    var alphaDiv = doc.createElement("div");
+    var labelDiv = doc.createElement("div");
+
+   // rectDiv.style.borderColor = stroke;
+  //  MVCore.DOM.setFloatStyle(rectDiv,"left");
+    rectDiv.style.position = "absolute";
+    rectDiv.style.left = RECT.x + "px";
+    rectDiv.style.top = RECT.y + "px";
+    rectDiv.style.width = RECT.width + "px";
+    rectDiv.style.height = "100%";
+    if (patientId == mergePatientId){
+        rectDiv.style.border = "1px solid " + stroke;
+    } else {
+        rectDiv.style.border = "2px dashed " + stroke;
+    }
+    rectDiv.className = "Hsptlztn";   
+    rectDiv.title = tooltip;
+    
+    alphaDiv.style.width = "100%";
+    alphaDiv.style.height = "100%";
+    alphaDiv.style.position = "absolute";
+    alphaDiv.style.backgroundColor = fill;
+    alphaDiv.style.opacity = alpha;    
+    
+    var labelSize = this._frc.computeSize(title);
+    var xoffset = RECT.width / 2 - labelSize.width / 2;
+    labelDiv.style.marginTop = "-16px";
+    labelDiv.style.position = "absolute";
+    labelDiv.innerHTML = title;
+    labelDiv.style.left = xoffset + "px";
+    labelDiv.style.opacity = 1;
+    labelDiv.style.color = "black";
+    labelDiv.style.backgroundColor = fill;
+    
+    rectDiv.appendChild(alphaDiv);
+    rectDiv.appendChild(labelDiv);   
+    
+    this._highlightLayer.appendChild(rectDiv);
+    
+    return {
+         elmt:   rectDiv
+    };
+};
+
+Timeline.OriginalEventPainter.prototype.addOnSelectListener = function(listener) {
+    this._onSelectListeners.push(listener);
+};
+
+Timeline.OriginalEventPainter.prototype.removeOnSelectListener = function(listener) {
+    for (var i = 0; i < this._onSelectListeners.length; i++) {
+        if (this._onSelectListeners[i] == listener) {
+            this._onSelectListeners.splice(i, 1);
+            break;
+        }
+    }
+};
+
+Timeline.OriginalEventPainter.prototype.addEventPaintListener = function(listener) {
+    this._eventPaintListeners.push(listener);
+};
+
+Timeline.OriginalEventPainter.prototype.removeEventPaintListener = function(listener) {
+    for (var i = 0; i < this._eventPaintListeners.length; i++) {
+        if (this._eventPaintListeners[i] == listener) {
+            this._eventPaintListeners.splice(i, 1);
+            break;
+        }
+    }
+};
+
+Timeline.OriginalEventPainter.prototype.softPaint = function() {};
+
+Timeline.OriginalEventPainter.prototype._paintEventLabel = function(ex, containerDiv, displayText, color, text) {
+    var doc = this._timeline.getDocument();    
+    var labelDiv = doc.createElement("div");
+    var labelSize = this._frc.computeSize(displayText);
+    var xoffset = ex - labelSize.width / 2 + this._eventTheme.instant.iconWidth / 2;
+    labelDiv.style.position = "absolute";
+    labelDiv.innerHTML = displayText;
+    labelDiv.style.left = xoffset + "px";
+    labelDiv.style.whiteSpace = "nowrap";
+    labelDiv.setAttribute("unselectable","on");
+    labelDiv.style.cursor = "default";
+
+    if(text != null)
+        labelDiv.title = text;
+
+    if (color != null) {
+        labelDiv.style.color = color;
+    }
+
+    containerDiv.appendChild(labelDiv);
+    
+    return {
+        left:   ex,
+        elmt:   labelDiv
+    };
+};
+
+Timeline.OriginalEventPainter.prototype._paintEventTape = function(startPixel, containerDiv, url, title, eventId, className) {
+        
+   var xoffset = startPixel + (this._band.getCellWidth() - this._eventTheme.instant.iconWidth) / 2;
+   var tapeDiv = this._timeline.getDocument().createElement("div");
+   tapeDiv.className = className;
+   tapeDiv.id = eventId;
+   tapeDiv.style.position = "absolute";
+   tapeDiv.style.left = xoffset + "px";
+   tapeDiv.style.width = this._eventTheme.instant.iconWidth + "px";
+   tapeDiv.style.height = this._eventTheme.instant.iconHeight + "px";
+   // tapeDiv.style.top = top + "px";
+
+   if(title != null) {
+      tapeDiv.title = title;
+   }
+        
+    var backgroundRepeat = "no-repeat";
+    if(url != null) {
+      tapeDiv.style.backgroundImage = "url(" + url + ")";
+      tapeDiv.style.backgroundRepeat = backgroundRepeat;
+    }     
+    
+    containerDiv.appendChild(tapeDiv);
+    
+    MVCore.DOM.registerEventWithObject(tapeDiv, "click", this, "_onclick");
+    
+    return {
+        left:   startPixel,
+        elmt:   tapeDiv
+    };
+};
+
+// 3892
+Timeline.OriginalEventPainter.prototype._onclick = function(keyboardInput, evt, target) {
+    var eventSource = this._band.getEventSource();
+    var className = target.className;
+    var eventTable = null;
+    if(className == Timeline.EventUtils.createEventClass("imptInfo")) {
+        eventTable = eventSource._imptInfoSource;
+    }  else if(className == Timeline.EventUtils.createEventClass("subImptInfo")) {
+        eventTable = eventSource._subImptInfoSource;
+    } else if(className == Timeline.EventUtils.createEventClass("dept")) {
+        eventTable = eventSource._deptSource;
+    } else if(className == Timeline.EventUtils.createEventClass("report")) {
+        eventTable = eventSource._reportSource;
+    }
+        
+    var event = eventTable._idToEvent[target.id];
+
+    showOnStrata(event.getDocs());
+    
+    MVCore.DOM.cancelEvent(evt);
+};
+
+Timeline.OriginalEventPainter.prototype._fireOnSelect = function(eventID) {
+    for (var i = 0; i < this._onSelectListeners.length; i++) {
+        this._onSelectListeners[i](eventID);
+    }
+};
+
+Timeline.OriginalEventPainter.prototype._fireEventPaintListeners = function(op, evt, els) {
+    for (var i = 0; i < this._eventPaintListeners.length; i++) {
+        this._eventPaintListeners[i](this._band, op, evt, els);
+    }
+};
+
+Timeline.OriginalEventPainter.prototype._setPaddingBottomHeight = function(height) {
+    MVCore.jQuery(this._lines_bottom).height(height);
+};
+
+Timeline.OriginalEventPainter.prototype._getPaddingBottomHeight = function(height) {
+    var paddingHeight = MVCore.jQuery(this._lines_bottom).height();
+    return paddingHeight;
+};
