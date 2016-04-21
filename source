@@ -1,0 +1,493 @@
+/*==================================================
+ *  Default Event Source
+ *==================================================
+ */
+
+
+Timeline.DefaultEventSource = function(eventIndex) {
+    this._events = (eventIndex instanceof Object) ? eventIndex : new MVCore.EventIndex();
+    
+    this._imptInfoSource = new MVCore.EventIndex();
+    //3892 add
+    this._subImptInfoSource = new MVCore.EventIndex();
+    this._deptSource = new MVCore.EventIndex();
+    this._reportSource = new MVCore.EventIndex();
+    
+    this._listeners = [];
+};
+
+Timeline.DefaultEventSource.prototype.addListener = function(listener) {
+    this._listeners.push(listener);
+};
+
+Timeline.DefaultEventSource.prototype.removeListener = function(listener) {
+    for (var i = 0; i < this._listeners.length; i++) {
+        if (this._listeners[i] == listener) {
+            this._listeners.splice(i, 1);
+            break;
+        }
+    }
+};
+
+
+Timeline.DefaultEventSource.prototype.loadMatrix = function(band) {
+    this.loadImptAndDept(band);
+    this.loadReport(band);
+};
+
+Timeline.DefaultEventSource.prototype.loadReport = function(band) {
+    this._band = band;
+    var yIndex = 0;
+     for (var j = 0; j < departmentData.items.length; j++) {
+          yIndex = yIndex + 1;
+          var item = departmentData.items[j];
+          var deptCATCode = item.deptCode == null ? "report" : item.deptCode;
+          if (deptCATCode == "report") {
+              this.loadWithDeptText(null, deptCATCode, deptCATCode, yIndex);
+          }
+          if (deptCATCode == "report" && item.children != null) {
+              for (var k = 0; k < item.children.length; k++) {
+                  yIndex = yIndex + 1;
+                  var child = item.children[k];
+                  this.loadWithDeptText(child, k, deptCATCode, yIndex);
+              }    
+          }
+     }
+};
+
+Timeline.DefaultEventSource.prototype.loadWithDeptText = function(item, deptCode, deptCATCode, yIndex) {
+    var getDocDate = function (doc) {
+        return new Date(doc.getAttribute("eventend"));
+    };
+    /**
+     * @param modalityCode モダリティコード
+     * @return 色グループ
+     */
+    var getModalityColor = function(modalityCode) {
+        var modality = _general.modalities.filter("*[code='" + modalityCode + "']");
+        if (modality.length) {
+            var crGroup = modality.attr("colorGroup");
+            return crGroup != "" ? parseInt(crGroup) : 10;
+        } else {
+            return 10;
+        }
+    };
+    // レポート情報を取得
+    for (var i = 0; i < _reports.length; i++) {
+        var report = _reports[i];
+        if (item == undefined || item.text == report.title) {
+            for (var j = 0; j < report.codes.length; j++) {
+                var code = report.codes[j];
+                var docs = _jqDocs.filter("document[code='" + code + "']");
+                for (var k = 0; k < docs.length; k++) {
+                    var cellIndex = this._band.getCellXIndex(new Date(docs[k].getAttribute("eventend")));
+//                    if(cellIndex < 61 && cellIndex > 120) {
+//                        continue;
+//                    }
+                    var eventId = Timeline.EventUtils.createEventID(cellIndex, deptCode, deptCATCode, yIndex);
+                    var tempEvent = new Timeline.DefaultEventSource.Event(
+                            { id:eventId, 
+                              docs:[]});
+                    var curEvent = this._reportSource.addKey(tempEvent);
+       
+        
+                    if (curEvent._icon == undefined) {
+                        curEvent._icon = _codesMap[code].partsCode
+                                                    ? _codesMap[code].partsCode : "";
+                        curEvent._colorGroup = _codesMap[code].colorGroup != ""
+                                                            ? parseInt(_codesMap[code].colorGroup)
+                                                            : getModalityColor(_codesMap[code].modalityCode);
+                        curEvent._deptColorGroup = item == null ? "": item.colorGroup;
+                        curEvent._docs = [docs[k]];
+                        curEvent._eventTime = getDocDate(docs[k]);
+                        curEvent._index = docs[k].index;
+                    } else if (curEvent._eventTime - getDocDate(docs[k]) > 0
+                            || curEvent._index > docs[k].index) {
+                        curEvent._icon = "Multi-"
+                            + (_codesMap[code].partsCode ? _codesMap[code].partsCode : "");
+                        curEvent._docs.push(docs[k]);
+                        curEvent._colorGroup = _codesMap[code].colorGroup != ""
+                                                        ? parseInt(_codesMap[code].colorGroup)
+                                                        : getModalityColor(_codesMap[code].modalityCode);
+                        curEvent._eventTime = getDocDate(docs[k]);
+                        curEvent._index = docs[k].index;
+                    } else {
+                        curEvent._docs.push(docs[k]);
+                        if (curEvent._icon.indexOf("Multi-") != 0) {
+                            curEvent._icon = "Multi-" + curEvent._icon;
+                        }
+                    }
+                }
+            }
+        }
+    }
+};
+
+
+
+
+Timeline.DefaultEventSource.prototype.loadImptAndDept = function(band) {
+    this._band = band;
+    var yIndex = 0;
+     for (var j = 0; j < departmentData.items.length; j++) {
+          yIndex = yIndex + 1;
+          var item = departmentData.items[j];
+          var deptCATCode = item.deptCode == null ? "report" : item.deptCode;
+          this.loadWithDept(item, deptCATCode, yIndex);  //middle line
+          if (item.children != null) {
+              for (var k = 0; k < item.children.length; k++) {
+                  yIndex = yIndex + 1;
+                  var child = item.children[k];
+                  this.loadWithDept(child, deptCATCode, yIndex);
+              }    
+          }
+     }
+};
+
+Timeline.DefaultEventSource.prototype.loadWithDept = function(departmentItem, deptCATCode, yIndex) {
+    var deptCode = departmentItem.deptCode;
+    /**
+     * 部門コードをチェック
+     * @param code 部門コード
+     */
+    var checkCode = function (code) {
+        if (deptCode === General.USER_DEPARTMENT) {
+            return code === _patient.departmentCode;
+        } else if (deptCode === General.OTHER_DEPARTMENT) {
+            return code != _patient.departmentCode;
+        } else {
+            return code === deptCode;
+        }
+    };
+    /**
+     * 文書のイベント日付を取得する
+     * @param doc 文書
+     */
+    var getDocDate = function (doc) {
+        return new Date(doc.eventend);
+    };
+    var temp_deptSource = new MVCore.EventIndex();
+    for (var i = 0; i < _eventDocs.length; i++) {
+        if (checkCode(_eventDocs[i].deptCode)) {
+            var cellIndex = this._band.getCellXIndex(new Date(_eventDocs[i].eventend));
+//            if(cellIndex < 61 && cellIndex > 120) {
+//                continue;
+//            }
+            var eventId = Timeline.EventUtils.createEventID(cellIndex, deptCode, deptCATCode, yIndex);
+            var tempImptInfoEvent = new Timeline.DefaultEventSource.Event(
+                    { id:eventId +  "_import", 
+                      docs:[],
+                      colorGroup:departmentItem.colorGroup,
+                      color:departmentItem.color });
+            
+            var tempSubImptInfoEvent = new Timeline.DefaultEventSource.Event(
+                    { id:eventId + "_subImport", 
+                      docs:[],
+                      colorGroup:departmentItem.colorGroup,
+                      color:departmentItem.color });
+            
+            var tempDeptEvent = new Timeline.DefaultEventSource.Event(
+                    { id:eventId, 
+                        docs:[],
+                        colorGroup:departmentItem.colorGroup,
+                        color:departmentItem.color });
+            
+            var curImptInfoEvent = this._imptInfoSource.addKey(tempImptInfoEvent);
+            // 3892 add
+            var curSubImptInfoEvent = this._subImptInfoSource.addKey(tempSubImptInfoEvent);
+          //  var curDeptEvent = this._deptSource.addKey(tempDeptEvent);
+            var curDeptEvent = temp_deptSource.addKey(tempDeptEvent);
+            
+
+            if (curImptInfoEvent._eventTime == undefined
+                    || curImptInfoEvent._eventTime > getDocDate(_eventDocs[i])
+                    || curImptInfoEvent._index > _eventDocs[i].index) {
+                if (_eventDocs[i].imptIcon != undefined && _eventDocs[i].imptIcon != "") {
+                    curImptInfoEvent._text = _eventDocs[i].displayTitle;
+                    curImptInfoEvent._tooltip = _general.getDocTooltip(_eventDocs[i]);
+                    curImptInfoEvent._icon = _eventDocs[i].imptIcon;
+                    curImptInfoEvent._eventTime = getDocDate(_eventDocs[i]);
+                    curImptInfoEvent._index = _eventDocs[i].index;
+                    curImptInfoEvent._deptCode = deptCode;
+                    curImptInfoEvent._docs.push(_eventDocs[i]);
+                }
+            }
+            
+            // 3892 add S
+            if (curSubImptInfoEvent._eventTime == undefined
+                    || curSubImptInfoEvent._eventTime > getDocDate(_eventDocs[i])
+                    || curSubImptInfoEvent._index > _eventDocs[i].index) {
+                if ((_eventDocs[i].subImptIcon != undefined && _eventDocs[i].subImptIcon != "")) {
+                	curSubImptInfoEvent._text = _eventDocs[i].displayTitle;
+                	curSubImptInfoEvent._tooltip = _general.getDocTooltip(_eventDocs[i]);
+                    curSubImptInfoEvent._icon = _eventDocs[i].subImptIcon;
+                    curSubImptInfoEvent._eventTime = getDocDate(_eventDocs[i]);
+                    curSubImptInfoEvent._index = _eventDocs[i].index;
+                    curSubImptInfoEvent._deptCode = deptCode;
+                    curSubImptInfoEvent._docs.push(_eventDocs[i]);
+                }
+            }
+            // 3892 add E
+                
+            if (curDeptEvent._icon == undefined) {
+                curDeptEvent._icon = _eventDocs[i].icon;
+                curDeptEvent._deptCode = _eventDocs[i].deptCode;
+                curDeptEvent._docs = [_eventDocs[i]];
+                curDeptEvent._eventTime = getDocDate(_eventDocs[i]);
+                curDeptEvent._index = _eventDocs[i].index;
+            } else if (curDeptEvent._eventTime - getDocDate(_eventDocs[i]) > 0
+                    || curDeptEvent._index > _eventDocs[i].index) {
+                curDeptEvent._icon = "Multi-" + _eventDocs[i].icon;
+                curDeptEvent._docs.push(_eventDocs[i]);
+                curDeptEvent._deptCode = _eventDocs[i].deptCode;
+                curDeptEvent._eventTime = getDocDate(_eventDocs[i]);
+                curDeptEvent._index = _eventDocs[i].index;
+            } else {
+                curDeptEvent._docs.push(_eventDocs[i]);
+                // 複数重要性文書の場合
+                if (curDeptEvent._icon.indexOf("Multi-") != 0) {
+                    curDeptEvent._icon = "Multi-" + curDeptEvent._icon;
+                }
+            }
+        }
+    }
+    
+    var iterator = temp_deptSource.getAllIterator();
+    while (iterator.hasNext()) {
+        var event = iterator.next();
+        this._deptSource.addKey(event);
+    }
+    temp_deptSource.removeAll();
+};
+
+Timeline.DefaultEventSource.prototype.clear = function() {
+    this._events.removeAll();
+    this._imptInfoSource.removeAll();
+    // 3892 add
+    this._subImptInfoSource.removeAll();
+    this._deptSource.removeAll();
+    this._reportSource.removeAll();
+    
+   // this._fire("onClear", []);
+};
+
+Timeline.DefaultEventSource.prototype.getEvent = function(id) {
+    return this._events.getEvent(id);
+};
+
+Timeline.DefaultEventSource.prototype.getEventIterator = function(startDate, endDate) {
+    return this._events.getIterator(startDate, endDate);
+};
+
+Timeline.DefaultEventSource.prototype.getEventReverseIterator = function(startDate, endDate) {
+    return this._events.getReverseIterator(startDate, endDate);
+};
+
+Timeline.DefaultEventSource.prototype.getImptInfoAllIterator = function() {
+    return this._imptInfoSource.getAllIterator();
+};
+//3892 add
+Timeline.DefaultEventSource.prototype.getSubImptInfoAllIterator = function() {
+    return this._subImptInfoSource.getAllIterator();
+};
+Timeline.DefaultEventSource.prototype.getDeptAllIterator = function() {
+    return this._deptSource.getAllIterator();
+};
+Timeline.DefaultEventSource.prototype.getReportAllIterator = function() {
+    return this._reportSource.getAllIterator();
+};
+
+Timeline.DefaultEventSource.prototype.getCount = function() {
+    return this._events.getCount();
+};
+
+Timeline.DefaultEventSource.prototype.getEarliestDate = function() {
+    return this._events.getEarliestDate();
+};
+
+Timeline.DefaultEventSource.prototype.getLatestDate = function() {
+    return this._events.getLatestDate();
+};
+
+Timeline.DefaultEventSource.prototype._fire = function(handlerName, args) {
+    for (var i = 0; i < this._listeners.length; i++) {
+        var listener = this._listeners[i];
+        if (handlerName in listener) {
+            try {
+                listener[handlerName].apply(listener, args);
+            } catch (e) {
+               // MVCore.Debug.exception(e);
+            }
+        }
+    }
+};
+
+Timeline.DefaultEventSource.prototype.getLatestPosEvent = function(baseCell) {
+    var eventSource = this._deptSource;
+    var iterator = eventSource.getAllIterator();
+    
+    var subArray = new Array();//diff array
+    var i = 0;
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        var eventID = evt.getID();
+        var parts = eventID.split('_');
+        var cellIndex = parseInt(parts[1]);       
+        var temp = Math.abs(baseCell - cellIndex);       
+        subArray[i] = temp;
+        i++;
+    } 
+    var j = 0;
+    for(var i = 1 ; i < subArray.length; i++){
+        if (subArray[i] < subArray[j]){
+            j = i ;
+        }
+    }
+    var event =  eventSource._events.elementAt(j);
+    return event;
+};
+
+Timeline.DefaultEventSource.prototype.getNearEvents = function(baseCell, allCount, startCellIndex, endCellIndex, cellWidth) {
+    var retArray = [];
+    //var eventSource = this._deptSource;
+    var eventSource = this.getDispalyDeptSource(startCellIndex, endCellIndex);
+    var iterator = eventSource.getAllIterator();
+    
+    var subArray = new Array();//difference array
+    var i = 0;
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        var eventID = evt.getID();
+        var parts = eventID.split('_');
+        var cellIndex = parseInt(parts[1]);       
+        var temp = Math.abs(baseCell - (cellIndex * cellWidth + cellWidth / 2));       
+        subArray[i] = temp;
+        i++;
+    } 
+    var minIndex = 0;
+    for(var i = 1 ; i < subArray.length; i++){
+        if (subArray[i] < subArray[minIndex]){
+            minIndex = i ;
+        }
+    }
+    var repeatMin = 0;
+    for(var j = (minIndex + 1) ; j < subArray.length; j++) {
+        if (subArray[minIndex] == subArray[j]){
+            repeatMin = repeatMin + 1; ;
+        }
+    }
+    var event =  eventSource._events.elementAt(minIndex);
+    retArray[0] = event;
+    retArray[1] = event;
+    retArray[2] = event;
+    
+    var halfCount = (allCount - 1) / 2;
+    var leftEventCount = minIndex;  
+    var rightEventCount = eventSource.getCount() - (minIndex + 1) - repeatMin;
+    var leftCount = 0;
+    var rightCount = 0;
+    var diff = 0;
+    if (leftEventCount < rightEventCount) {
+        leftCount = leftEventCount >= halfCount ? halfCount :  leftEventCount;
+         diff = leftEventCount >= halfCount ?  0 : (halfCount - leftEventCount);
+         rightCount = rightEventCount >= halfCount ? (halfCount + diff) :  rightEventCount;
+    } else {
+         rightCount = rightEventCount >= halfCount ? halfCount :  rightEventCount;
+            diff = rightEventCount >= halfCount ?  0 : (halfCount - rightEventCount);
+            leftCount = leftEventCount >= halfCount ? halfCount + diff :  leftEventCount;        
+    }
+   
+    
+    for(i = 1; i <= leftCount; i++) {
+        if (minIndex - i >= 0) {
+            retArray[0] = (eventSource._events.elementAt(minIndex - i));
+        }
+    }
+    for(i = 1; i <= rightCount; i++) {
+        if (minIndex + i < eventSource._events.length()) {
+            var temp = eventSource._events.elementAt(minIndex + repeatMin + i);
+            if(temp) {
+                retArray[2] = temp;
+            }
+        }
+    }
+    return retArray;
+};
+
+Timeline.DefaultEventSource.prototype.getDispalyDeptSource = function(startCellIndex, endCellIndex) {
+    var temp_deptSource = new MVCore.EventIndex();
+    var eventSource = this._deptSource;
+    var iterator = eventSource.getAllIterator();
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        var eventID = evt.getID();
+        var parts = eventID.split('_');
+        var cellIndex = parts[1];
+        //if(cellIndex >= 0 && cellIndex <= 59) {
+        if(cellIndex >= startCellIndex && cellIndex <= endCellIndex) {
+            if (MVCore.jQuery("#" + eventID).parent().css("display") != "none" && MVCore.jQuery("#" + eventID).parent().css("visibility") != "hidden") {
+                temp_deptSource.add(evt);
+            }
+        }
+    } 
+    return temp_deptSource;
+};
+
+Timeline.DefaultEventSource.prototype.splitDeptSource = function(isCat) {
+    var temp_deptSource_cat = new MVCore.EventIndex();
+    var temp_deptSource = new MVCore.EventIndex();
+    var eventSource = this._deptSource;
+    var iterator = eventSource.getAllIterator();
+    while (iterator.hasNext()) {
+        var evt = iterator.next();
+        var eventID = evt.getID();
+        var parts = eventID.split('_');
+        var deptCode = parts[2]; 
+        var deptCATCode = parts[3];
+        if(deptCode == deptCATCode) {
+            temp_deptSource_cat.add(evt);
+        } else {
+            temp_deptSource.add(evt);
+        }
+    } 
+    if(isCat) {
+        return temp_deptSource_cat;
+    } else {
+        return temp_deptSource;
+    }
+};
+
+Timeline.DefaultEventSource.Event = function(args) {
+  this._id = args.id ? args.id.trim() : "";
+  this._text = args.text ? args.text.trim() : "";
+  this._tooltip = args.tooltip ? args.tooltip.trim() : "";
+  this._icon = args.icon ? args.icon.trim() : undefined;
+  this._eventTime = args.eventTime ? args.eventTime.trim() : undefined;
+  this._index = args.index ? args.index.trim() : 0;
+  this._deptCode = args.deptCode ? args.deptCode.trim() : "";
+  this._docs = args.docs ? args.docs : [];
+  this._colorGroup = args.colorGroup ? args.colorGroup : "";
+  this._deptColorGroup = args.deptColorGroup ? args.deptColorGroup : "";
+  this._color = args.color ? args.color : "";
+};
+
+Timeline.DefaultEventSource.Event.prototype = {
+    getID:          function() { return this._id; },
+    
+    getText:        function() { return this._text; }, // title
+    getTooltip: function() { return this._tooltip; },
+    getIcon:       function() { return this._icon; },
+    getEventTime:        function() { return this._eventTime; },
+    getYindex:        function() { 
+        var parts = this._id.split('_');
+        var yIndex = parts[2];
+        return yIndex;
+    },
+    
+    getIndex:        function() { return this._index; },
+    getDeptCode:       function() { return this._deptCode; },
+    getDocs:   function() { return this._docs; },
+    getColorGroup:   function() { return this._colorGroup; },
+    getDeptColorGroup:   function() { return this._deptColorGroup; },
+    getColor:   function() { return this._color; }
+};
