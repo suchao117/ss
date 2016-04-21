@@ -1,0 +1,3951 @@
+var TimelineBase = function (settings) {
+    if (!(this instanceof TimelineBase)) return;
+
+    var docTypeData = settings.docTypeData;
+    var documents = settings.documents;
+    var treeCategory = settings.treeCategory;
+    var general = settings.general;
+    var textFormats = settings.textFormats;
+    var alertMsg = settings.alertMsg;
+    var ContextMenu = settings.ContextMenu;
+    var codesMap = settings.codesMap;
+    var Dialog = settings.Dialog;
+    var patient = settings.patient;
+    var pairData = settings.pairData;
+    var yearText = textFormats.LayerYearUnit;
+    var monthText = textFormats.LayerMonthUnit;
+    var startDayOfWeek = general.StartDayOfWeek;
+    if (startDayOfWeek === undefined) {
+        startDayOfWeek = 0;
+    }
+    if (monthText === undefined) {
+        monthText = textFormats.LayerMonthUnit;
+    }
+
+    /**
+     * jQuery.css("left", val)
+     * @param val 値
+     */
+    $.prototype.left = function (val) {
+        if (val === undefined) {
+            return parseInt(this.css("left").replace("px", ""));
+        } else {
+            return this.css("left", val + "px");
+        }
+    };
+    /**
+     * jQuery.css("left") + jQuery.css("right")
+     */
+    $.prototype.right = function () {
+        return this.left() + this.width();
+    };
+    /**
+     * jQuery.css("top", val)
+     * @param val 値
+     */
+    $.prototype.top = function (val) {
+        if (val != undefined) {
+            return this.css("top", val + "px");
+        } else {
+            return parseInt(this.css("top").replace("px", ""));
+        }
+    };
+
+    var thisTimeline = this;
+    var basePath = "js/Matrix/Timeline/";
+
+    /**
+     * 時、分、秒情報が無しの日付を取得する
+     * @param paras コンストラクタパラメーター
+     * @returns 日付オブジェクト
+     */
+    function newDate(paras) {
+        var ret;
+        if (paras) {
+            ret = new Date(paras);
+        } else {
+            ret = new Date();
+        }
+        return new Date(ret.getFullYear()
+                + "/" + (ret.getMonth() + 1)
+                + "/" + ret.getDate());
+    }
+    /**
+     * 日付によって、月の最後日付を取得する
+     * @param date 目標日付
+     * @returns 結果日付
+     */
+    function getLastDateOfMonth(date) {
+        var temp = newDate(date);
+        temp.setDate(1);
+        temp.setMonth(temp.getMonth() + 1);
+        temp.setDate(0);
+        return temp.getDate();
+    }
+    /**
+     * 日付によって、週の最前日付を取得する
+     * @param date 目標日付
+     * @returns 結果日付
+     */
+    function getFirstDayOfWeek(date) {
+        var orig = newDate(date);
+        var temp = newDate(date);
+        var day = temp.getDay();
+        temp.setDate(temp.getDate() - day + startDayOfWeek);
+        while (temp > orig) {
+            temp.setDate(temp.getDate() - 7);
+        }
+        return temp;
+    }
+    /**
+     * 終了日 > 開始日のテスト
+     * @param st 開始日
+     * @param ed 終了日
+     * @returns テスト結果
+     */
+    function validateDateRange(st, ed) {
+        if (!(st && ed && st.getFullYear && ed.getFullYear)) {
+            return false;
+        } else {
+            return (ed - st) >= 0;
+        }
+    }
+    /**
+     * テンプレートを取得する
+     * @param templateId テンプレートID
+     */
+    function getTemplateHtml(templateId) {
+        var selector = "script#" + templateId + "[type='template']";
+        return $(selector)[0].innerHTML;
+    }
+    /**
+     * 可視の文書種数を取得する
+     * @returns 可視の文書種数
+     */
+    function getVisibleDocTypeCount() {
+        var count = 0;
+        for (var i = 0; i < docTypeData.items.length; i++) {
+            var item = docTypeData.items[i];
+            count++;
+            if (item.expand) {
+                count += item.children.length;
+            }
+        }
+        return count;
+    }
+
+    /** 今日 */
+    var today = newDate();
+    // スタイルフアイルを利用する
+    $("head").append("<link href='%s' rel='stylesheet'></link>"
+            .replace("%s", basePath + "style/timeline.css"));
+
+    TimelineBase.prototype.setBand = function (tl, band) {
+        this.tl = tl;
+        this.band = band;
+        
+        tl.addDecoratorPaintListener(this.selector.paintDecoratorHandle);
+    };
+    
+    /**
+     * タイムラインのセレクトを作成する
+     * @param start セレクトの開始日
+     * @param end セレクトの終了日
+     * @param subSt 地層表示期間枠の開始日
+     * @param subEd 地層表示期間枠の終了日
+     */
+    TimelineBase.prototype.selector = function (start, end, subSt, subEd) {
+        var selector = document.getElementById("timeline-main");
+        selector.start = start;
+        selector.end = end;
+        selector.subStart = subSt;
+        selector.subEnd = subEd;
+        
+        thisTimeline.selector = selector;
+        
+       // timeStrataLayout();
+        
+        function initTimeRange() {
+            
+        }
+        
+//        selector.setBand = function (tl, band) {
+//            selector.tl = tl;
+//            selector.band = band;
+//            
+//            tl.addDecoratorPaintListener(paintDecoratorHandle);
+//            //band.addOnScrollListener(setTimeRange);
+//        };
+        /**
+         * バーチャル枠の範囲を設定する
+         * @param virSt 開始日
+         * @param virEd 終了日
+         */
+        selector.setVirtualBoxVisible = function (visible) {
+            var vBox = selector.vBox;
+            if (visible) {
+                vBox.css("display", "inline");
+            } else {
+                vBox.css("display", "none");
+            }
+        };
+        /**
+         * 地層表示期間枠の移動またはサイズ変更イベント
+         * @param event マウスイベント
+         */
+        selector.subChange = function () {
+            selector.subStart = thisTimeline.band.pixelOffsetToDate(selector.box.left());
+            selector.subEnd = thisTimeline.band.pixelOffsetToDate(selector.box.right());
+            selector.setVirtualRange(selector.subStart, selector.subEnd);
+            if (selector.onSubRangeChanged instanceof Function) {
+               selector.onSubRangeChanged(selector.subStart, selector.subEnd);
+            }
+            if (!(thisTimeline.strata instanceof Function)) {
+              invokeCtrl.invoke(
+                      thisTimeline.strata,
+                      thisTimeline.strata.setTimeRange,
+                      [selector.subStart, selector.subEnd]);
+            }
+        };
+
+        /**
+         * 枠のセル範囲設定する
+         * @param virSt 開始日
+         * @param virEd 終了日
+         */
+        selector.setVirtualCellRange = function (virSt, virEd) {
+              var etherPainter = thisTimeline.band._etherPainter;
+              var st = etherPainter.roundDownToMark(virSt);
+            selector.setVirtualRange(st, virEd);
+      };
+      /**
+       * バーチャル枠の範囲を設定する
+       * @param virSt 開始日
+       * @param virEd 終了日
+       */
+      selector.setVirtualRange = function (virSt, virEd) {
+          var vBox = thisTimeline.tl._boxDecorator._vBox;
+          if ((selector.subStart == virSt && selector.subEnd == virEd)
+                  || virEd < selector.start || virSt > selector.end) {
+              selector.setVirtualBoxVisible(false);
+              return;
+          } else {
+              selector.setVirtualBoxVisible(true);
+          }
+          if (virSt < selector.start) {
+              var vboxWidth = thisTimeline.band.dateToVectorDistance(selector.start, virEd);
+              //var offsetLeft = selector.band.dateToPixelOffset(selector.start);
+              vBox.left(-4).width(vboxWidth)/*.width(dxOfRange(selector.start, virEd))*/
+                  .hideLeft();
+          } else if (virEd > selector.end) {
+              var vboxWidth = thisTimeline.band.dateToVectorDistance(virSt, selector.end);
+              if (vboxWidth == 0) {
+                  selector.setVirtualBoxVisible(false);
+                  return;
+              } else {
+                  var offsetLeft = thisTimeline.band.dateToPixelOffset(virSt);
+                  vBox.left(offsetLeft).width(vboxWidth)
+                      .hideRight();
+              }
+          } else {
+              var vboxWidth = thisTimeline.band.dateToVectorDistance(virSt,virEd);
+              vBox.left(thisTimeline.band.dateToPixelOffset(virSt))
+                  .width(vboxWidth);
+              vBox.showLeft();
+              vBox.showRight();
+          }
+          if (selector.onVirtualRangeChanged instanceof Function) {
+              selector.onVirtualRangeChanged(virSt, virEd);
+          }
+      };
+      
+        
+      selector.paintDecoratorHandle = function(op, decorator) {
+            if (op == "paintEnded") {
+                selector.box = decorator._box;
+                selector.vBox = decorator._vBox;
+                setTimeRange();
+                thisTimeline.band.addOnScrollListener(setTimeRange);
+            };
+        };
+        /**
+         * セレクトの日付範囲を設定する
+         * @param st 開始日
+         * @param ed 終了日
+         */
+        function setTimeRange() {
+            var band = thisTimeline.band;
+            selector.start = band._ether._start;
+            selector.end = band.getMaxDate();          
+            var dayCount = (selector.end - selector.start) / (1000 * 60 * 60 * 24) + 1;
+
+            
+            if (dayCount >= 1200) {
+                selector.hideMonth = true;
+            } else {
+                selector.hideMonth = false;
+            }
+            
+            selector.setVirtualBoxVisible(false);
+            selector.subStart = band.pixelOffsetToDate(selector.box.left());
+            selector.subEnd = band.pixelOffsetToDate(selector.box.right());
+            
+            if (!rateChanging) {
+                todayIndex = band.getCellXIndex(_today);
+            }
+
+            if (selector.onTimeRangeChanged instanceof Function) {
+                selector.onTimeRangeChanged(start, end);
+            }
+            if (!(thisTimeline.strata instanceof Function)) {
+                invokeCtrl.invoke(
+                        thisTimeline.strata,
+                        thisTimeline.strata.setTimeRange,
+                        [selector.subStart, selector.subEnd]);
+            }
+        }
+              
+        return selector;
+    };
+
+    /**
+     * タイムラインの地層を作成する
+     * @param dx 横範囲
+     * @param dy 縦範囲
+     * @param start 開始日
+     * @param end 終了日
+     */
+    TimelineBase.prototype.strata = function (dx, dy, start, end) {
+        $("head").append("<link href='%s' rel='stylesheet'></link>"
+                .replace("%s", basePath + "style/strata.css"));
+        var html = getTemplateHtml("Timeline")
+                .replace(/@basePath@/g, basePath);
+        var strata = $(html);
+        var columns = [];
+        // セルの展開情報
+        var expandInfos = {};
+        strata[0].style.width = strata.dx = dx;
+        strata[0].style.height = strata.dy = dy;
+        strata.addClass("timeline-strata");
+
+        if (start === undefined && thisTimeline.selector != undefined) {
+            start = newDate(thisTimeline.selector.subStart);
+        }
+        if (end === undefined && thisTimeline.selector != undefined) {
+            end = newDate(thisTimeline.selector.subEnd);
+        }
+        strata.start =  start;
+        strata.end = end;
+        var DAYS = (end - start) / (1000 * 60 * 60 * 24) + 1;
+
+        var headerBody = strata.children(".timeline-header-body");
+        var headerContent = headerBody.children(".timeline-header-content");
+        var lBtn = headerBody.children(".timeline-btn-l");
+        var rBtn = headerBody.children(".timeline-btn-r");
+        var waist = strata.children(".timeline-waist").addClass("timeline-strata-waist");
+        var main = strata.children(".timeline-main").addClass("timeline-strata-main");
+
+        var headerBlock = "<div unselectable='on' class='timeline-header-block'></div>";
+        var separator = "<div unselectable='on' class='timeline-header-separator'></div>";
+        var waistBlock = "<div unselectable='on' class='timeline-strata-waist-block'></div>";
+        strata.main =  main;
+        /**
+         * 地層に表示の日付範囲を取得する
+         * @param [開始日, 終了日]
+         */
+        var getRealRange = function () {
+            var s = newDate(strata.start);
+            var e = newDate(strata.end);
+            switch (strata.mode) {
+                case "D":
+                    break;
+                case "W":
+                    s = getFirstDayOfWeek(s);
+                    e = getFirstDayOfWeek(e);
+                    e.setDate(e.getDate() + 6);
+                    break;
+                case "M":
+                    s.setDate(1);
+                    e.setDate(getLastDateOfMonth(e));
+                    break;
+                case "MS":
+                    s.setDate(1);
+                    var sMonth = s.getMonth();
+                    var eMonth = e.getMonth();
+                    var yearNum = e.getFullYear() - s.getFullYear();
+                    var monthNum = yearNum * 12 + eMonth - sMonth + 1;
+                    var divMod = monthNum % strata.modeDivision;
+                    if (divMod != 0) {
+                        e.setMonth(eMonth + strata.modeDivision - divMod);
+                    }
+                    e.setDate(getLastDateOfMonth(e));
+                    break;
+                case "Y":
+                    s.setMonth(0);
+                    s.setDate(1);
+                    e.setMonth(11);
+                    e.setDate(31);
+                    break;
+                case "YS":
+                    s.setMonth(0);
+                    s.setDate(1);
+                    e.setMonth(11);
+                    e.setDate(31);
+                    var yearNum = e.getFullYear() - s.getFullYear() + 1;
+                    var divMod = yearNum % strata.modeDivision;
+                    if (divMod != 0) {
+                        e.setFullYear(e.getFullYear() + strata.modeDivision - divMod);
+                    }
+                    break;
+            }
+            return [s, e];
+        };
+        /**
+         * 地層にデータを充填する
+         */
+        var fillAs = function () {
+            if (strata.mode.charAt(0) == "Y") {
+                waist[0].style.display = "none";
+                //suchao del
+               // strata[0].style.top = -(settings.docTypeBox.height() + 25) + "px";
+            } else {
+                waist[0].style.display = "block";
+              //suchao del
+              //  strata[0].style.top = -(settings.docTypeBox.height() + 48) + "px";
+            }
+            waist[0].style.marginTop = "0px";
+            switch (strata.mode) {
+                case "D": invokeCtrl.invoke(this, fillAsDay); break;
+                case "W": invokeCtrl.invoke(this, fillAsWeek); break;
+                case "M": invokeCtrl.invoke(this, fillAsMonth); break;
+                case "MS": invokeCtrl.invoke(this, fillAsMonths); break;
+                case "Y": invokeCtrl.invoke(this, fillAsYear); break;
+                case "YS": invokeCtrl.invoke(this, fillAsYears); break;
+            }
+            invokeCtrl.invoke(this, fillCompletedAdjust);
+        };
+        /**
+         * 単位「日」によって、地層を充填する
+         */
+        var fillAsDay = function () {
+            columns = [];
+            waist[0].innerHTML = "";
+            headerContent[0].innerHTML = "";
+            var waistWidth = waist.width();
+            if (waistWidth == 0) {
+                waistWidth = strata.dx - 2;
+            }
+            var dayWidth = (waistWidth - DAYS * 4) / DAYS;
+            var expIdxes = [];
+            for (var idx in expandInfos) {
+                if (expandInfos[idx] != undefined) {
+                    expIdxes.push(idx);
+                }
+            }
+            // 展開のセルの幅
+            var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                                general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+            var expCellWidth = minExpCellWidth > dayWidth
+                                ? minExpCellWidth : dayWidth;
+//          var expCellWidth = general.LayerModelParam.defExpCellWidth > dayWidth + 20
+//                              ? general.LayerModelParam.defExpCellWidth
+//                              : dayWidth + 20;
+            var dx = (expCellWidth - dayWidth) * expIdxes.length;
+            // 未展開のセルの幅
+            var stdWidth = dayWidth - dx / (DAYS - expIdxes.length);
+            var day = newDate(strata.start);
+            for (var index = 0, crtMonthWidth = 0;
+                    index < DAYS;
+                    index++, day.setDate(day.getDate() + 1)) {
+                var expDayWidth = stdWidth;
+                if (expIdxes.contains(index)) {
+                    expDayWidth = expCellWidth;
+                }
+                crtMonthWidth = crtMonthWidth + expDayWidth + 4;
+                var block = $(waistBlock)[0];
+                block.innerHTML = day.getDate();
+                block.style.width = expDayWidth;
+                waist.append(block);
+
+                if (day.getDay() == 6) {
+                    block.classList.add("timeline-strata-waist-sat");
+                } else if (day.getDay() == 0) {
+                    block.classList.add("timeline-strata-waist-sun");
+                } else {
+                    block.classList.add("timeline-strata-waist-workday");
+                }
+                if (index == 0) {
+                    block.style.marginLeft = "0px";
+                    block.style.borderLeft = "none";
+                    crtMonthWidth -= 2;
+                } else if (index == DAYS - 1) {
+                    block.style.marginRight = "0px";
+                    block.style.borderRight = "none";
+                    crtMonthWidth -= 23;
+                    var month = day.getMonth() + 1;
+                    if (day.getFullYear() == strata.start.getFullYear()
+                            && day.getMonth() == strata.start.getMonth()) {
+                        crtMonthWidth -= 21;
+                    }
+                    if (headerContent.children().length > 0) {
+                        crtMonthWidth -= 3;
+                    }
+                    $(headerBlock)
+                            .html(day.getFullYear() + "/" + month)
+                            .width(crtMonthWidth)
+                            .appendTo(headerContent);
+                }
+                columns.push({
+                    width: index == DAYS - 1 ? expDayWidth + 3 : expDayWidth,
+                    from: new Date(day),
+                    to: new Date(day)
+                });
+
+                // 月の最後1つの日
+                if (day.getDate() == getLastDateOfMonth(day) && index != DAYS - 1) {
+                    if (day.getFullYear() == strata.start.getFullYear()
+                            && day.getMonth() == strata.start.getMonth()) {
+                        crtMonthWidth -= 21;
+                    }
+                    if (crtMonthWidth >= 1) {
+                        $(headerBlock)
+                                .html(day.getFullYear() + "/" + (day.getMonth() + 1))
+                                .width(crtMonthWidth - 2.5)
+                                .appendTo(headerContent);
+                        $(separator).appendTo(headerContent);
+                    } else if (headerContent.children().length > 1) {
+                        headerContent.children().last().remove();
+                    }
+                    crtMonthWidth = 0;
+                }
+            }
+            fillColumns();
+        };
+        /**
+         * 単位「週」によって、地層を充填する
+         */
+        var fillAsWeek = function () {
+            columns = [];
+            waist[0].innerHTML = "";
+            headerContent[0].innerHTML = "";
+            
+            var weekRanges = _cellNumTabel.getWeekArray (strata.start, strata.end);
+            var weeks = weekRanges.length;
+            var start = weekRanges[0].start;
+            var end = weekRanges[weeks - 1].start;
+            var months = end.getMonth() - start.getMonth() + 1
+            + (end.getFullYear() - start.getFullYear()) * 12;
+
+            var waistWidth = waist.width();
+            if (waistWidth == 0) {
+                waistWidth = strata.dx - 2;
+            }
+            var weekWidth = (waistWidth - weeks * 4) / weeks;
+            var expIdxes = [];
+            for (var idx in expandInfos) {
+                if (expandInfos[idx] != undefined) {
+                    expIdxes.push(idx);
+                }
+            }
+            // 展開のセルの幅
+            var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                                general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+            var expCellWidth = minExpCellWidth > weekWidth 
+                                ? minExpCellWidth : weekWidth ;
+//          var expCellWidth = general.LayerModelParam.defExpCellWidth > weekWidth + 20
+//                              ? general.LayerModelParam.defExpCellWidth
+//                              : weekWidth + 20;
+            var dx = (expCellWidth - weekWidth) * expIdxes.length;
+            // 未展開のセルの幅
+            var stdWidth = weekWidth - dx / (weeks - expIdxes.length);
+            var crtMonth = start.getMonth();
+            for (var index = 0, crtMonthWidth = 0; index < weeks; index++) {
+            	var item = weekRanges[index];
+                var expWeekWidth = stdWidth;
+                if (expIdxes.contains(index)) {
+                    expWeekWidth = expCellWidth;
+                }
+                crtMonthWidth += expWeekWidth + 4;
+                
+                var week1St = item.start;
+                var weekLast = item.end;
+                
+                var weekBlock = $(waistBlock)[0];
+                var labelBefore = (week1St.getMonth() + 1) + "/" + week1St.getDate();
+                var labelAfter = (weekLast.getMonth() + 1) + "/" + weekLast.getDate();
+                weekBlock.innerHTML = labelBefore ==  labelAfter ? labelBefore : labelBefore + "-" + labelAfter;
+                weekBlock.style.width = end - week1St == 0 ? expWeekWidth + 1 : expWeekWidth;
+                waist.append(weekBlock);
+                
+                columns.push({
+                    width: end - week1St == 0 ? expWeekWidth + 3 : expWeekWidth,
+                    from: new Date(week1St),
+                    to: new Date(weekLast)
+                });
+
+                if(weeks == 1) {
+                    weekBlock.style.marginLeft = "0px";
+                    weekBlock.style.borderLeft = "none";
+                    $(headerBlock).html(week1St.getFullYear() + "/" + (week1St.getMonth() + 1))
+                    .width(crtMonthWidth)
+                    .appendTo(headerContent);
+                } else if (index == 0) {
+                    weekBlock.style.marginLeft = "0px";
+                    weekBlock.style.borderLeft = "none";
+                    crtMonthWidth -= 2;
+                } else if (index + 1 == weeks) {
+                    weekBlock.style.marginRight = "0px";
+                    weekBlock.style.borderRight = "none";
+                    crtMonthWidth -= 23;
+                    if (months == 1) {
+                        crtMonthWidth -= 21;
+                    }
+                    if (headerContent.children().length > 0) {
+                        crtMonthWidth -= 3;
+                    }
+                    $(headerBlock).html(week1St.getFullYear() + "/" + (week1St.getMonth() + 1))
+                                .width(crtMonthWidth)
+                                .appendTo(headerContent);
+                }
+
+                // 週範囲に、月の最後1つの日は存在の場合
+                if ((weekLast.getMonth() != crtMonth || weekLast.getDate() == getLastDateOfMonth(weekLast))
+                        && index + 1 != weeks) {
+                    if (headerContent.html() == "") {
+                        crtMonthWidth -= 21;
+                    }
+                    if (crtMonthWidth > 0) {
+                        $(headerBlock).html(week1St.getFullYear() + "/" + (week1St.getMonth() + 1))
+                                    .width(crtMonthWidth - 2.5)
+                                    .appendTo(headerContent);
+                        $(separator).appendTo(headerContent);
+                    } else if (headerContent.children().length > 1) {
+                        headerContent.children().last().remove();
+                    }
+                    crtMonthWidth = 0;
+                    if (weekLast.getDate() == getLastDateOfMonth(weekLast)) {
+                        crtMonth = weekLast.getMonth() == 11 ? 0 : weekLast.getMonth() + 1;
+                    } else {
+                        crtMonth = weekLast.getMonth();
+                    }
+                }
+            }
+            fillColumns();
+        };
+        /**
+         * 単位「月」によって、地層を充填をする
+         */
+        var fillAsMonth = function () {
+            columns = [];
+            waist[0].innerHTML = "";
+            headerContent[0].innerHTML = "";
+            var start = newDate(strata.start);
+            var end = newDate(strata.end);
+            start.setDate(1);
+            end.setDate(1);
+            var years = end.getFullYear() - start.getFullYear() + 1;
+            var months = end.getMonth() - start.getMonth() + 1
+                    + (years - 1) * 12;
+            var waistWidth = waist.width();
+            if (waistWidth == 0) {
+                waistWidth = strata.dx - 2;
+            }
+            var mWidth = (waistWidth - months * 4) / months;
+            var expIdxes = [];
+            for (var idx in expandInfos) {
+                if (expandInfos[idx] != undefined) {
+                    expIdxes.push(idx);
+                }
+            }
+            // 展開のセルの幅
+            var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                                general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+            var expCellWidth = minExpCellWidth > mWidth
+                                ? minExpCellWidth : mWidth;
+//          var expCellWidth = general.LayerModelParam.defExpCellWidth > mWidth + 20
+//                              ? general.LayerModelParam.defExpCellWidth
+//                              : mWidth + 20;
+            var dx = (expCellWidth - mWidth) * expIdxes.length;
+            // 未展開のセルの幅
+            var stdWidth = mWidth - dx / (months - expIdxes.length);
+            for (var day = newDate(start), crtYearWidth = 0, index = 0;
+                    end - day >= 0;
+                    day.setMonth(day.getMonth() + 1), index++) {
+                var expMWidth = stdWidth;
+                if (expIdxes.contains(index)) {
+                    expMWidth = expCellWidth;
+                }
+                crtYearWidth += expMWidth + 4;
+                var monthBlock = $(waistBlock)[0];
+                monthBlock.innerHTML = day.getMonth() + 1 + monthText;
+                monthBlock.style.width = day - end == 0 ? expMWidth + 1 : expMWidth;
+                waist.append(monthBlock);
+                columns.push({
+                    width: day - end == 0 ? expMWidth + 3 : expMWidth,
+                    from: new Date(day),
+                    to: (function () {
+                        var temp = newDate(day);
+                        temp.setDate(getLastDateOfMonth(temp));
+                        return temp;
+                    })()
+                });
+                if (day - start == 0 && day - end == 0) {
+                    monthBlock.style.marginLeft = "0px";
+                    monthBlock.style.borderLeft = "none";
+                    $(headerBlock)
+                    .html(day.getFullYear())
+                    .width(crtYearWidth)
+                    .appendTo(headerContent);
+                } else if (day - start == 0) {
+                    monthBlock.style.marginLeft = "0px";
+                    monthBlock.style.borderLeft = "none";
+                    crtYearWidth -= 2;
+                } else if (day - end == 0) {
+                    monthBlock.style.marginRight = "0px";
+                    monthBlock.style.borderRight = "none";
+                    crtYearWidth -= 23;
+                    if (day.getFullYear() == start.getFullYear()) {
+                        crtYearWidth -= 21;
+                    }
+                    if (headerContent.children().length > 0) {
+                        crtYearWidth -= 3;
+                    }
+                    $(headerBlock)
+                        .html(day.getFullYear())
+                        .width(crtYearWidth)
+                        .appendTo(headerContent);
+                }
+
+                // 年の最後1つの月
+                if (day.getMonth() == 11 && day - end != 0) {
+                    if (day.getFullYear() == start.getFullYear()) {
+                        crtYearWidth -= 21;
+                    }
+                    if (crtYearWidth > 0) {
+                        $(headerBlock)
+                            .html(day.getFullYear())
+                            .width(crtYearWidth - 2.5)
+                            .appendTo(headerContent);
+                        $(separator).appendTo(headerContent);
+                    } else if (headerContent.children().length > 1) {
+                        headerContent.children().last().remove();
+                    }
+                    crtYearWidth = 0;
+                }
+            }
+            fillColumns();
+        };
+        /**
+         * 単位「複数の月」によって、地層を充填する
+         */
+        var fillAsMonths = function () {
+       	 columns = [];
+         waist[0].innerHTML = "";
+         headerContent[0].innerHTML = "";
+         var monthRanges = _cellNumTabel.getMonthArray(strata.start, strata.end, strata.modeDivision);
+         var blocks = monthRanges.length;
+         var start = monthRanges[0].start;
+         var end = monthRanges[blocks -1].start;
+         
+         var waistWidth = waist.width();
+         if (waistWidth == 0) {
+             waistWidth = strata.dx - 2;
+         }
+         var mWidth = (waistWidth - blocks * 4) / blocks;
+         var expIdxes = [];
+         for (var idx in expandInfos) {
+             if (expandInfos[idx] != undefined) {
+                 expIdxes.push(idx);
+             }
+         }
+         // 展開のセルの幅
+         var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                             general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+         var expCellWidth = minExpCellWidth > mWidth
+                             ? minExpCellWidth : mWidth;
+//       var expCellWidth = general.LayerModelParam.defExpCellWidth > mWidth + 20
+//                           ? general.LayerModelParam.defExpCellWidth
+//                           : mWidth + 20;
+         var dx = (expCellWidth - mWidth) * expIdxes.length;
+         // 未展開のセルの幅
+         var stdWidth = mWidth - dx / (blocks - expIdxes.length);          	
+         for (var  index = 0, crtYearWidth = 0; index < blocks; index++) {
+         	var item = monthRanges[index];
+             var day = item.start;
+             var dayEnd = item.end;
+
+             var expMWidth = stdWidth;
+             if (expIdxes.contains(index)) {
+                 expMWidth = expCellWidth;
+             }
+             crtYearWidth += expMWidth + 4;
+             var monthBlock = $(waistBlock).appendTo(waist)[0];
+             var labelBefore = parseInt(day.getMonth() + 1);
+             var labelAfter = parseInt(dayEnd.getMonth() + 1);
+             monthBlock.innerHTML = (labelBefore ==  labelAfter ? labelBefore : labelBefore + "-" + labelAfter) + monthText;
+             monthBlock.style.width = day - end == 0 ? expMWidth + 1 : expMWidth;
+             columns.push({
+                 width: day - end == 0 ? expMWidth + 3 : expMWidth,
+                 from: new Date(day),
+                 to: (function () {
+                     var temp = newDate(dayEnd);
+                     temp.setDate(getLastDateOfMonth(temp));
+                     return temp;
+                 })()
+             });
+             if (blocks == 1) {
+                 monthBlock.style.marginLeft = "0px";
+                 monthBlock.style.borderLeft = "none";
+                 $(headerBlock)
+                 .html(day.getFullYear())
+                 .width(crtYearWidth)
+                 .appendTo(headerContent);
+             } else if (index == 0) {
+                 monthBlock.style.marginLeft = "0px";
+                 monthBlock.style.borderLeft = "none";
+                 crtYearWidth -= 2;
+             } else if (index + 1 == blocks) {
+                 monthBlock.style.marginRight = "0px";
+                 monthBlock.style.borderRight = "none";
+                 crtYearWidth -= 23;
+                 if (day.getFullYear() == start.getFullYear()) {
+                     crtYearWidth -= 21;
+                 }
+                 if (headerContent.children().length > 0) {
+                     crtYearWidth -= 3;
+                 }
+                 $(headerBlock)
+                     .html(day.getFullYear())
+                     .width(crtYearWidth)
+                     .appendTo(headerContent);
+             }
+
+             // 年の最後1つの「複数月」
+             if (index + 1 != blocks && day.getFullYear() != monthRanges[index + 1].start.getFullYear()) {
+                 if (day.getFullYear() == start.getFullYear()) {
+                     crtYearWidth -= 21;
+                 }
+                 if (crtYearWidth > 0) {
+                     $(headerBlock)
+                         .html(day.getFullYear())
+                         .width(crtYearWidth - 2.5)
+                         .appendTo(headerContent);
+                     $(separator).appendTo(headerContent);
+                 } else if (headerContent.children().length > 1) {
+                     headerContent.children().last().remove();
+                 }
+                 crtYearWidth = 0;
+             }
+         }
+         fillColumns();
+        };
+        /**
+         * 単位「年」によって、地層を充填する
+         */
+        var fillAsYear = function () {
+            columns = [];
+            waist[0].innerHTML = headerContent[0].innerHTML = "";
+            headerContent[0].style.width = headerBody.width() - 32;
+
+            var start = newDate(strata.start);
+            var end = newDate(strata.end);
+            start.setMonth(0);
+            start.setDate(1);
+            end.setMonth(0);
+            end.setDate(1);
+            var years = end.getFullYear() - start.getFullYear() + 1;
+            var waistWidth = waist.width();
+            if (waistWidth == 0) {
+                waistWidth = strata.dx - 2;
+            }
+            var yColWidth = (waistWidth - years * 4) / years;
+            var expIdxes = [];
+            for (var idx in expandInfos) {
+                if (expandInfos[idx] != undefined) {
+                    expIdxes.push(idx);
+                }
+            }
+            // 展開のセルの幅
+            var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                                general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+            var expCellWidth = minExpCellWidth > yColWidth
+                                ? minExpCellWidth : yColWidth;
+//          var expCellWidth = general.LayerModelParam.defExpCellWidth > yColWidth + 20
+//                              ? general.LayerModelParam.defExpCellWidth
+//                              : yColWidth + 20;
+            var dx = (expCellWidth - yColWidth) * expIdxes.length;
+            // 未展開のセルの幅
+            var stdWidth = yColWidth - dx / (years - expIdxes.length);
+            for (var day = newDate(start), index = 0;
+                    end - day >= 0;
+                    day.setFullYear(day.getFullYear() + 1), index++) {
+                var expMWidth = stdWidth;
+                if (expIdxes.contains(index)) {
+                    expMWidth = expCellWidth;
+                }
+                var crtYearWidth = expMWidth + 4;
+                columns.push({
+                    width: day - end == 0 ? expMWidth + 3 : expMWidth,
+                    from: new Date(day),
+                    to: (function () {
+                        var temp = newDate(day);
+                        temp.setMonth(11);
+                        temp.setDate(getLastDateOfMonth(temp));
+                        return temp;
+                    })()
+                });
+                if (day - end == 0) {
+                    crtYearWidth -= 21;
+                    $(headerBlock)
+                        .html(day.getFullYear() + yearText)
+                        .width(crtYearWidth)
+                        .appendTo(headerContent);
+                } else {
+                    if (day - start == 0) {
+                        crtYearWidth -= 21;
+                    }
+                    if (crtYearWidth > 0) {
+                        $(headerBlock)
+                            .html(day.getFullYear() + yearText)
+                            .width(crtYearWidth)
+                            .appendTo(headerContent);
+                    } else if (headerContent.children().length > 1) {
+                        headerContent.children().last().remove();
+                    }
+                }
+            }
+            fillColumns();
+        };
+        /**
+         * 単位「複数の年」によって、地層を充填する
+         */
+        var fillAsYears = function () {
+            columns = [];
+            waist[0].innerHTML = headerContent[0].innerHTML = "";
+            headerContent[0].style.width = headerBody.width() - 32 + "px";
+
+            var realRange = getRealRange();
+            var start = realRange[0];
+            var end = realRange[1];
+            var years = end.getFullYear() - start.getFullYear() + 1;
+            var blocks = years / strata.modeDivision;
+            var waistWidth = waist.width();
+            if (waistWidth == 0) {
+                waistWidth = strata.dx - 2;
+            }
+            var yColWidth = (waistWidth - blocks * 4) / blocks;
+            var expIdxes = [];
+            for (var idx in expandInfos) {
+                if (expandInfos[idx] != undefined) {
+                    expIdxes.push(idx);
+                }
+            }
+            // 展開のセルの幅
+            var minExpCellWidth = general.LayerModelParam.minDocNameExpWidth + general.LayerModelParam.minDateExpWidth + 
+                                general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+            var expCellWidth = minExpCellWidth > yColWidth
+                                ? minExpCellWidth : yColWidth;
+//          var expCellWidth = general.LayerModelParam.defExpCellWidth > yColWidth + 20
+//                              ? general.LayerModelParam.defExpCellWidth
+//                              : yColWidth + 20;
+            var dx = (expCellWidth - yColWidth) * expIdxes.length;
+            // 未展開のセルの幅
+            var stdWidth = yColWidth - dx / (blocks - expIdxes.length);
+            end.setFullYear(end.getFullYear() - strata.modeDivision + 1);
+            end.setMonth(0);
+            end.setDate(1);
+            for (var day = newDate(start), index = 0;
+                    end - day >= 0;
+                    day.setFullYear(day.getFullYear() + strata.modeDivision), index++) {
+                var expMWidth = stdWidth;
+                if (expIdxes.contains(index)) {
+                    expMWidth = expCellWidth;
+                }
+                var crtYearWidth = expMWidth + 4;
+                columns.push({
+                    width: day - end == 0 ? expMWidth + 3 : expMWidth,
+                    from: new Date(day),
+                    to: (function () {
+                        var temp = newDate(day);
+                        temp.setFullYear(temp.getFullYear() + strata.modeDivision - 1);
+                        temp.setMonth(11);
+                        temp.setDate(getLastDateOfMonth(temp));
+                        return temp;
+                    })()
+                });
+                if (day - end == 0) {
+                    crtYearWidth -= 21;
+                    $(headerBlock)
+                        .html(day.getFullYear() + yearText + "~")
+                        .width(crtYearWidth)
+                        .appendTo(headerContent);
+                } else {
+                    if (day - start == 0) {
+                        crtYearWidth -= 21;
+                    }
+                    if (crtYearWidth > 0) {
+                        $(headerBlock)
+                            .html(day.getFullYear() + yearText + "~")
+                            .width(crtYearWidth)
+                            .appendTo(headerContent);
+                    } else if (headerContent.children().length > 1) {
+                        headerContent.children().last().remove();
+                    }
+                }
+            }
+            fillColumns();
+        };
+
+        /**
+         * 地層に列の開始時間と終了時間を設定する
+         */
+        strata.setStrataSelectedDate = function (indexTemp) {
+            if (indexTemp.length > 0) {
+                strata.selectedDate = [];
+                for (var i = 0; i < indexTemp.length; i++) {
+                    var column = $(strata).find('.timeline-strata-column')[indexTemp[i]];
+                    var selectedColDate = [];
+                    selectedColDate.push(column.start);
+                    selectedColDate.push(column.end);
+                    strata.selectedDate.push(selectedColDate);
+                }
+            }
+        };
+        /**
+         * 地層に列ハイライト用DIVを設定する
+         */
+        strata.showStrataDateRange = function (indexTemp, flag) {
+            var showWidth = 0;
+            var showHeight = 0;
+            var showLeft = 0;
+            var showTop = 0;
+            var hascolumnFlag = true;
+            if (indexTemp.length > 0) {
+                for (var n = 0; n < indexTemp.length; n++) {
+                    var column = $(strata).find('.timeline-strata-column')[indexTemp[n]];
+                    if (column == undefined) {
+                        hascolumnFlag = false;
+                        break;
+                    }
+                    if (strata.selectedDate.length != indexTemp.length) {
+                        hascolumnFlag = false;
+                        break;
+                    }
+                    var selectedColDate = strata.selectedDate[n];
+                    if ((selectedColDate.length != 2) || (selectedColDate[0] - column.start != 0) || (selectedColDate[1] - column.end != 0)) {
+                        hascolumnFlag = false;
+                        break;
+                    }
+                    showWidth += column.offsetWidth + 2;
+                }
+                if (hascolumnFlag) {
+                    showLeft = $(strata).find('.timeline-strata-column')[indexTemp[0]].offsetLeft;
+                    showTop = $(strata).find('.timeline-strata-column')[indexTemp[0]].offsetTop;
+                    showHeight = $(strata).find('.timeline-strata-column')[indexTemp[0]].offsetHeight;
+                    
+                    strata.lightBox.height(showHeight).top(showTop);
+                    strata.lightBox.left(showLeft);
+                    strata.lightBox.width(showWidth + 2);
+                    $(strata.main).append(strata.lightBox);
+                    
+                    strata.showColIndex = indexTemp;
+                    strata.haslightBox = true;
+                } else {
+                    strata.removeStrataDateRange(flag);
+                }
+            } else {
+                strata.removeStrataDateRange(flag);
+            }
+        };
+        
+        /**
+         * 地層に列ハイライト用DIVと時間軸ハイライト用DIVを削除処理する
+         */
+        strata.removeStrataDateRange = function (flag) {
+            $(strata.lightBox).remove();
+            strata.haslightBox = false;
+            strata.showColIndex = [];
+            if (!flag) {
+               tl.getBandWithName("bodyBand")._etherPainter._lineLayer.style.display = "none";
+            }
+            
+        };
+        /**
+         * 地層に列を充填する
+         */
+        var fillColumns = function () {
+//          main.html("");
+            main.empty();
+            var cellCount = getVisibleDocTypeCount();
+            var cateDocs = getCategoryDocs();
+            for (var i = 0; i < columns.length; i++) {
+                fillColumn(columns[i].width, columns[i].from, columns[i].to,
+                        cellCount, cateDocs);
+            }
+            if(columns.length > 0) {
+//              var temp = main.children().first();
+                var temp = main.find('.timeline-strata-column').first();
+                temp[0].style.width = temp.width() - 1 + "px";
+//              temp = main.children().last();
+                temp = main.find('.timeline-strata-column').last();
+                temp[0].style.width = temp.width() - 2 + "px";
+                if (previewSelectedIds.length) {
+                    selectedIds = previewSelectedIds;
+                    previewSelectedIds = [];
+                    fillAs();
+                } else {
+                    settings.drawLayerDocExistsMark.call(strata, cateDocs, getRealRange());
+                }
+                var highlightBox = new StrataHighlightsTransparentBox("strata-selector-box");
+                strata.lightBox = highlightBox;
+                if (strata.haslightBox) {
+                    if (strata.showColIndex.length > 0) {
+                    	strata.showStrataDateRange(strata.showColIndex, false);
+                    } else {
+                    	strata.removeStrataDateRange();
+                    }
+                } else {
+                	strata.removeStrataDateRange();
+                }
+            }
+        };
+        /**
+         * 地層に1つの列を充填する
+         * @param width 列の幅
+         * @param from 列の開始日
+         * @param to 列の終了日
+         * @param cellCount 列にセル数
+         * @param cateDocs 分類文書情報
+         */
+        var fillColumn = function (width, from, to, cellCount, cateDocs) {
+            var column = $("<div unselectable='on' class='timeline-strata-column'></div>")[0];
+            var cellHtml = "<div unselectable='on' class='timeline-strata-cell'></div>";
+            // この列のインデックス
+            var thisColIdx = main.children().length;
+            // この列にセルの展開情報
+            var expandInfo = expandInfos[thisColIdx];
+            main.append(column);
+            column.style.width = width + "px";
+            column.style.height = main.height();
+            column.start = from;
+            var tempTo = new Date(to);
+            tempTo.setDate(tempTo.getDate() + 1);
+            column.end = tempTo;
+            $(column).css({ opacity:1});
+            $(column).css({ boxShadow:""});
+            $(column).mousemove(function(){
+                var thisColIndex = main.find('.timeline-strata-column').index(column);
+                strata.showColIndex = [];
+                strata.showColIndex.push(thisColIndex);
+                strata.setStrataSelectedDate(strata.showColIndex);
+                strata.showStrataDateRange(strata.showColIndex, false);
+                var timeRange = tl.getBandWithName("bodyBand")._etherPainter._band.getLineLayerAttrByDate(column.start, column.end);
+                var lineLayer = tl.getBandWithName("bodyBand")._etherPainter._lineLayer;
+                tl.getBandWithName("bodyBand")._etherPainter._band.showLineLayerDiv(lineLayer, timeRange);
+            });
+            var expIdxes = [];
+            for (var index in expandInfo) {
+                if (expandInfo[index]) {
+                    expIdxes.push(index);
+                }
+            }
+            var cateDocMap = {};
+            // セル高さの情報
+            var cellHeights = [];
+            var sumDy = 0;
+            // セル高さの情報を計算 & セルの文書を取得
+            for (var i = 0, index = 0; i < docTypeData.items.length; i++, index++) {
+                var item = docTypeData.items[i];
+                // 文書種アイテム展開の場合
+                if (item.expand) {
+                    cellHeights.push(item.height);
+                    for (var j = 0; j < item.children.length; j++) {
+                        index++;
+                        var child = item.children[j];
+                        cateDocMap[child.name] = {};
+                        var allDocs = [];
+                        for (var categoryId in cateDocs[child.name]) {
+                            // 列の日付範囲内の文書
+                            var filterDocs = filterRange(cateDocs[child.name][categoryId], from, to);
+                            if (filterDocs && filterDocs.docs) {
+                                allDocs = allDocs.concat(filterDocs.docs);
+                            }
+                            cateDocMap[child.name][categoryId] = filterDocs;
+                        }
+                        cateDocMap[child.name].allDocs = allDocs;
+                        if (expIdxes.length && expandInfo[index]) {
+                            var expHeight = ((allDocs.length > 10 ? 10 : allDocs.length) + 1)
+                                * general.LayerModelParam.expLineHeight
+                                + general.LayerModelParam.expTitleHeight
+                                + general.LayerModelParam.expScrollBarHeight;
+                            var totalHeight = expHeight + child.height;
+                            totalHeight = totalHeight >	docTypeBox.totalHeight ? docTypeBox.totalHeight : totalHeight;
+                            cellHeights.push(totalHeight);
+                            sumDy += expHeight;
+                        } else {
+                            cellHeights.push(child.height);
+                        }
+                    }
+                } else {
+                    cateDocMap[item.name] = {};
+                    var allDocs = [];
+                    for (var categoryId in cateDocs[item.name]) {
+                        // 列の日付範囲内の文書
+                        var filterDocs = filterRange(cateDocs[item.name][categoryId], from, to);
+                        if (filterDocs && filterDocs.docs) {
+                            allDocs = allDocs.concat(filterDocs.docs);
+                        }
+                        cateDocMap[item.name][categoryId] = filterDocs;
+                    }
+                    cateDocMap[item.name].allDocs = allDocs;
+                    if (expIdxes.length && expandInfo[index]) {
+                        var expHeight = ((allDocs.length > 10 ? 10 : allDocs.length) + 1)
+                            * general.LayerModelParam.expLineHeight
+                            + general.LayerModelParam.expTitleHeight
+                            + general.LayerModelParam.expScrollBarHeight;
+                        var totalHeight = expHeight + item.height;
+                        totalHeight = totalHeight >	docTypeBox.totalHeight ? docTypeBox.totalHeight : totalHeight;
+                        cellHeights.push(totalHeight);
+                        sumDy += expHeight;
+                    } else {
+                        cellHeights.push(item.height);
+                    }
+                }
+            }
+            // 展開のセルは存在の場合、セル高さを再計算
+            if (expIdxes.length) {
+                var unitDy = sumDy / (cellCount - expIdxes.length);
+                sumDy = 0;
+                for (var index = 0 ; index < cellCount; index++) {
+                    if (!expandInfo[index]) {
+                        var height = cellHeights[index] - unitDy;
+                        if (height < 24) {
+                            sumDy += 24 - height;
+                            height = 24;
+                        }
+                        cellHeights[index] = height;
+                    }
+                }
+                unitDy = sumDy / expIdxes.length;
+                for (var index = 0 ; index < cellCount; index++) {
+                    if (expandInfo[index]) {
+                        cellHeights[index] -= unitDy;
+                    }
+                }
+            }
+            // 最前の列によって、文書種ボックスのセル高さを設定する
+            if (thisColIdx == 0) {
+                var docTypeBoxItems = settings.docTypeBox.children();
+                for (var j = 0; j < cellHeights.length; j++) {
+                    docTypeBoxItems[j].style.height = cellHeights[j] + "px";
+                    for (var k = 0; k < docTypeBoxItems[j].children.length; k++) {
+                        var child = docTypeBoxItems[j].children[k];
+                        if (child.tagName == "DIV") {
+                            child.style.marginTop = cellHeights[j] / 2 - 8 + "px";
+                        } else if (child.tagName == "SPAN") {
+                            child.style.lineHeight = cellHeights[j] + "px";
+                        }
+                    }
+                }
+            }
+            // 列にセルを充填
+            for (var i = 0, index = 0; i < docTypeData.items.length; i++, index++) {
+                var item = docTypeData.items[i];
+                var cell = $(cellHtml);
+                cell.appendTo(column);
+                cell[0].style.width = width + "px";
+                cell[0].style.height = cellHeights[index] + "px";
+                cell[0].style.backgroundColor = item.color;
+                // アイテム展開の場合
+                if (item.expand === true) {
+                    for (var j = 0; j < item.children.length; j++) {
+                        index++;
+                        var child = item.children[j];
+                        var subCell = $(cellHtml);
+                        subCell.appendTo(column);
+                        subCell[0].style.width = width + "px";
+                        subCell[0].style.height = cellHeights[index] + "px";
+                        subCell[0].style.backgroundColor = child.color;
+                        var count = 0;
+                        subCell.allDocs = cateDocMap[child.name].allDocs;
+                        // セルに文書を選択したの場合
+                        if (checkDocsIfSelected(subCell.allDocs)) {
+                            expIdxes.push(index);
+                            if (!expandInfo) {
+                                expandInfos[thisColIdx] = {};
+                                expandInfo = expandInfos[thisColIdx];
+                            }
+                            expandInfo[index] = true;
+                        }
+                        if (!previewSelectedIds.length) {
+                            // このセル未展開
+                            if (!(expIdxes.length && expandInfo[index])) {
+                                var filterDocsSet = new Array();
+                                for (var categoryId in cateDocs[child.name]) {
+                                    var filterDocs = cateDocMap[child.name][categoryId];
+                                    filterDocsSet.push(filterDocs);
+                                }
+                                // イベントタイムによって、文書をソートする
+                                filterDocsSet.sort(function (docs1, docs2) {
+                                    return docs2.eventtime - docs1.eventtime;
+                                });
+                                for (var k = 0; k < filterDocsSet.length; k++) {
+                                    count += fillCellDoc(subCell, filterDocsSet[k], child.colorGroup);
+                                }
+                                if (count != 0) {
+                                    if (subCell.height() < count * 24) {
+                                        var docItem = subCell.children();
+                                        var title = docItem.children(".timeline-strata-doctype-title");
+                                        docItem.width(width - 17);
+                                        title.width(title.width() - 17);
+                                        resizeCell(subCell, true);
+                                    } else
+                                        subCell[0].style.overflow = "hidden";
+                                    setCellTooltip(subCell);
+                                    setExpandBtn(subCell);
+                                    thisTimeline.CtxMenu.newListView(subCell.allDocs).on(subCell);
+                                } else {
+                                    subCell.click(function () {
+                                        for (var any in expandInfos) {
+                                            if (expandInfos.hasOwnProperty(any))
+                                                strata.repaintColumns(true);
+                                            break;
+                                        }
+                                    });
+                                }
+                            } else {
+                                setExpandCellContent(subCell, subCell.allDocs, child.colorGroup);
+                            }
+                        }
+                    }
+                } else {
+                    var count = 0;
+                    cell.allDocs = cateDocMap[item.name].allDocs;
+                    // セルに文書を選択したの場合
+                    if (checkDocsIfSelected(cell.allDocs)) {
+                        expIdxes.push(index);
+                        if (!expandInfo) {
+                            expandInfos[thisColIdx] = {};
+                            expandInfo = expandInfos[thisColIdx];
+                        }
+                        expandInfo[index] = true;
+                    }
+                    if (!previewSelectedIds.length) {
+                        // このセル未展開
+                        if (!(expIdxes.length && expandInfo[index])) {
+                            var filterDocsSet = new Array();
+                            for (var categoryId in cateDocs[item.name]) {
+                                var filterDocs = cateDocMap[item.name][categoryId];
+                                filterDocsSet.push(filterDocs);
+                            }
+                            // イベントタイムによって、文書をソートする
+                            filterDocsSet.sort(function (docs1, docs2) {
+                                return docs2.eventtime - docs1.eventtime;
+                            });
+                            for (var j = 0; j < filterDocsSet.length; j++) {
+                                count += fillCellDoc(cell, filterDocsSet[j], item.colorGroup);
+                            }
+                            if (count != 0) {
+                                if (cell.height() < count * 24) {
+                                    var docItem = cell.children();
+                                    var title = docItem.children(".timeline-strata-doctype-title");
+                                    docItem.width(width - 17);
+                                    title.width(title.width() - 17);
+                                    resizeCell(cell, true);
+                                } else
+                                    cell[0].style.overflow = "hidden";
+                                setCellTooltip(cell);
+                                setExpandBtn(cell);
+                                thisTimeline.CtxMenu.newListView(cell.allDocs).on(cell);
+                            } else {
+                                cell.click(function () {
+                                    for (var any in expandInfos) {
+                                        if (expandInfos.hasOwnProperty(any))
+                                            strata.repaintColumns(true);
+                                        break;
+                                    }
+                                });
+                            }
+                        } else {
+                            setExpandCellContent(cell, cell.allDocs, item.colorGroup, item.docCodes != undefined);
+                        }
+                    }
+                }
+            }
+        };
+        /**
+         * セルの高さと幅を再計算する
+         * @param cell 目標セル
+         * @param scroll スクロールバー存在/不存在
+         */
+        var resizeCell = function (cell, scroll) {
+            if (cell.width() < (scroll ? 72 : 55)) {
+                var docTypeItem = cell.children();
+                var count = docTypeItem.children(".timeline-strata-doctype-count")[0];
+                var imptIcon = docTypeItem.children(".timeline-strata-doctype-impt");
+                if (imptIcon.css("background-color") === "rgba(0, 0, 0, 0)") {
+                    imptIcon.remove();
+                    count.style.width = cell.width() - (scroll ? 24 : 7);
+                } else {
+                    count.style.width = cell.width() - (scroll ? 42 : 25);
+                }
+            }
+        };
+        /**
+         * 日付範囲によって、文書を濾過する
+         * @param allDocs 全文書
+         * @param from 開始日
+         * @param to 終了日
+         */
+        var filterRange = function (allDocs, from, to) {
+            var cateDoc;
+            var inRange = function (eventend) {
+                var date = new Date(eventend);
+                return date >= from && date <= to;
+            };
+            for (var i = 0; i < allDocs.length; i++) {
+                if (inRange(allDocs[i].eventend)) {
+                    if (cateDoc == undefined) {
+                        cateDoc = {
+                            eventtime: new Date(allDocs[i].eventend + " " + allDocs[i].eventendTime),
+                            displayTitle: allDocs[i].displayTitle,
+                            important: false,
+                            hasDiffTitle: false,
+                            docs: []
+                        };
+                    }
+                    cateDoc.important = cateDoc.important || allDocs[i].important;
+                    cateDoc.hasDiffTitle = cateDoc.hasDiffTitle
+                        || cateDoc.displayTitle != allDocs[i].displayTitle;
+                    cateDoc.docs.push(allDocs[i]);
+                    var eventtime = new Date(allDocs[i].eventend + " " + allDocs[i].eventendTime);
+                    if (eventtime > cateDoc.eventtime) {
+                        cateDoc.eventtime = eventtime;
+                        cateDoc.displayTitle = allDocs[i].displayTitle;
+                    }
+                }
+            }
+            return cateDoc;
+        };
+        /**
+         * セルに文書ブロックを充填する
+         * @param cell セル
+         * @param cateDoc 分類文書情報
+         * @param colorGroup 色グループ
+         */
+        var fillCellDoc = function (cell, cateDoc, colorGroup) {
+            if (cateDoc == undefined) {
+                return 0;
+            }
+            var getUserDepartmentcount = function () {
+                var count = 0;
+                for (var i = 0; i < cateDoc.docs.length; i++) {
+                    if (patient.departmentCode == cateDoc.docs[i].departmentCode) {
+                        count += 1;
+                    }
+                }
+                return count;
+            };
+            var getCountWidth = function () {
+                var width = cateDoc.hasDiffTitle ? 20 : 0;
+                var count = new String(cateDoc.docs.length).length;
+//              return width + count * 8;
+                var useDepCount = new String(getUserDepartmentcount()).length;
+                return width + count * 8 + useDepCount * 8 + 8;
+            };
+            var docItem = $("<div unselectable='on' class='timeline-strata-doctype-item'></div>");
+            var imptIcon = $("<div unselectable='on' class='timeline-strata-doctype-impt'></div>")[0];
+            var title = $("<div unselectable='on' class='timeline-strata-doctype-title'></div>")[0];
+            var count = $("<div unselectable='on' class='timeline-strata-doctype-count'></div>")[0];
+            var mergeIcon = $("<div unselectable='on' class='timeline-strata-doctype-impt'></div>")[0];
+            var tag = $("<div unselectable='on' class='timeline-strata-doctype-tag'></div>")[0];
+            var dragging = false, divCreated = false;
+            title.innerHTML = cateDoc.displayTitle;
+            //title.style.width = cell.width() - 25 - getCountWidth() + "px";
+            title.style.width = cell.width() - 25 - 24 + "px";
+            // count.innerHTML = (cateDoc.hasDiffTitle ? "等 " : "") + cateDoc.docs.length;
+            count.innerHTML = (cateDoc.hasDiffTitle ? (textFormats.LayerWait + " ") : "") + getUserDepartmentcount() + "/" + cateDoc.docs.length;
+            
+            if (cell.docCount == undefined) {
+                cell.docCount = cateDoc.docs.length;
+            } else {
+                cell.docCount += cateDoc.docs.length;
+            }
+            docItem[0].style.width = cell.width();
+            var sortedDocs = [].concat(cateDoc.docs);
+            var mergeFlg = false;
+            for (var i = 0; i < sortedDocs.length; i++) {
+                var mergePatientId = sortedDocs[i].patientId;
+                if (patientId != mergePatientId){
+                    mergeFlg = true;
+                }
+            }
+            if (cateDoc.important === true && patient.importantIconVisible == "true") {
+                // 重要性フラグ
+                imptIcon.style.backgroundImage = "url(images/matrix/important_16.png)";
+            } else {
+                imptIcon.style.backgroundColor = "rgba(0,0,0,0)";
+            }
+            // マージ患者文書
+            if(mergeFlg){
+                mergeIcon.style.backgroundImage = "url(images/matrix/025/500_" + ColorUtil.picCrGroup[colorGroup] + ")";
+                docItem[0].style.height = 48 + "px";
+            } else {
+                mergeIcon.style.backgroundImage = "url(images/matrix/025/025_" + ColorUtil.picCrGroup[colorGroup] + ")";
+                docItem[0].style.height = 48 + "px";
+            }
+            docItem.appendTo(cell).append(imptIcon).append(title).append(mergeIcon).append(count);
+            docItem.appendTo(cell).append(imptIcon).append(title).append(count).append(tag);
+            resizeCell(cell, false);
+            var tooltip = "";
+            // イベントタイムによって、文書をソートする
+            sortedDocs.sort(function (doc1, doc2) {
+                return new Date(doc1.eventend + " " + doc1.eventendTime)
+                    - new Date(doc2.eventend + " " + doc2.eventendTime);
+            });
+
+            // アイコンパースが存在しませんの場合、defultアイコンが表示される処理
+            var nofind = (function () {
+            	var img=event.srcElement;
+            	img.src="images/tag/510_02_16_p24.png";
+            	img.onerror=null; 
+            });
+
+            // ツールチップ文字列を作成
+            for (var i = 0; i < sortedDocs.length; i++) {
+                var status = textFormats.ExpandCellStatusCode3;
+                if (sortedDocs[i].status == '1') {
+                    status = textFormats.ExpandCellStatusCode1;
+                } else if (sortedDocs[i].status == '2') {
+                    status = textFormats.ExpandCellStatusCode2;
+                } else if (sortedDocs[i].status == '4') {
+                    status = textFormats.ExpandCellStatusCode4;
+                }
+                var tooltipTitle = general.getDocTooltip(sortedDocs[i]);
+
+//              tooltip += tooltipTitle + " "
+//              + sortedDocs[i].eventend + " "
+//              + sortedDocs[i].deptName;
+                tooltip += tooltipTitle + " "
+                  + sortedDocs[i].eventend + " "
+                  + sortedDocs[i].deptName + " "
+                  + status;
+                if (i != sortedDocs.length - 1) {
+                    tooltip += "\n";
+                    if (i == 9) {
+                        tooltip += general.extraFormatOfNormalCellTooltip
+                            .replace("{0}", sortedDocs.length - i - 1);
+                        break;
+                    }
+                }
+                var mergePatientId = sortedDocs[i].patientId;
+                if (patientId != mergePatientId){
+                    mergeFlg = true;
+                }
+            }
+            // タグの設定
+            var tagValue = null;
+            var tagTitleValue = null;
+            for (var i = 0; i < sortedDocs.length; i++) {
+                if (null != sortedDocs[i].tag && "" != sortedDocs[i].tag && undefined != sortedDocs[i].tag) {
+                	tagValue = sortedDocs[i].tag;
+                }
+                if (null != sortedDocs[i].tagTitle && "" != sortedDocs[i].tagTitle && undefined != sortedDocs[i].tagTitle) {
+                	tagTitleValue = sortedDocs[i].tagTitle;
+                }
+            }
+            if (null != tagTitleValue && '' != tagTitleValue) {
+            	var tagImgObj = document.createElement("img");
+                tagImgObj.title = tagTitleValue;
+                tagImgObj.onerror = nofind;
+                tagImgObj.src = "images/tag/" + tagValue + "";
+                $(tagImgObj).appendTo(tag);
+            } 
+            var openGroupView = (function () {
+                var id, ids = [];
+                for (var i = 0; i < sortedDocs.length; i++) {
+                    if (!sortedDocs[i].delReqFlag) {
+                       id = sortedDocs[i].dacsid;
+                       ids.push(id);
+                    }
+                }
+                if (id == undefined) {
+                    return function () {
+                        alertMsg(general.Messages.allTargetAreDeleteRequested);
+                    };
+                } else {
+                    return function (event) {
+                        var mode;
+                        if (event.type == "click") {
+                            mode = general.StdCellActionMode.SingleClick;
+                        } else if (event.type == "dblclick") {
+                            mode = general.StdCellActionMode.DoubleClick;
+                        }
+                        switch (mode) {
+                            case "SingleMode":
+                                general.openFocusView(general.FOCUS_SINGLE_VIEW,
+                                        general.BLANK, id, "");
+                                break;
+                            case "ListViewMode":
+                                general.openFocusView(general.FOCUS_LIST_VIEW, general.BLANK,
+                                        "", ids.join(","), general.NAVIGATE_RELATED_CODE_CELL, "", "l");
+                                break;
+                            case "ExpandCellMode":
+                                expandCell(cell, event);
+                                break;
+                            case "DoNothing":
+                                break;
+                            case "CompareMode":
+                            default:
+                                general.openFocusView(general.FOCUS_MULTI_VIEW, general.BLANK,
+                                        id, "", general.NAVIGATE_RELATED_CODE_GROUP, id, "");
+                                break;
+                        }
+                    };
+                }
+            })();
+            docItem.attr("title", tooltip)
+            .mousedown(function () {
+                this.style.backgroundColor = "rgb(148, 190, 255)";
+                dragging = true;
+            }).mouseup(function () {
+                dragging = false;
+            }).mousemove(function (event) {
+                if (dragging && !divCreated) {
+                    // 文書をドラッグ
+                    new DraggingDocs(event, cateDoc.docs, {
+                            jobPalette: settings.jobPalette,
+                            general: general,
+                            content: docItem,
+                            pushDocs: settings.pushDocs,
+                            colorGroup: colorGroup
+                        }).appendTo("body")
+                        .onDragEnd = function () {
+                            dragging = false;
+                            divCreated = false;
+                        };
+                    divCreated = true;
+                }
+            }).mouseover(function () {
+                this.style.backgroundColor = "rgb(206, 227, 255)";
+            }).mouseout(function () {
+                this.style.backgroundColor = "rgba(0,0,0,0)";
+            });
+            if (general.StdCellActionMode.SingleClick) {
+                docItem.click(openGroupView);
+            }
+            if (general.StdCellActionMode.DoubleClick) {
+                docItem.dblclick(openGroupView);
+            }
+            thisTimeline.CtxMenu.newGroupListView(cell.allDocs, openGroupView).on(docItem);
+            return 2;
+        };
+        var categoryDocs, previewSelectedIds = [], selectedIds;
+        /**
+         * 分類文書情報を取得する
+         */
+        var getCategoryDocs = function () {
+            if (categoryDocs == undefined) {
+                // 分類文書情報を作成
+                categoryDocs = {};
+                var jqDoc = $(documents);
+                var forEachDocCodes = function (docCodes, retLayer) {
+                    for (var i = 0; i < docCodes.length; i++) {
+                        var docCode = docCodes[i];
+                        var categories = treeCategory.getCategories(docCode);
+                        var docs = jqDoc.filter("*[code='" + docCode + "']");
+                        for (var j = 0; j < docs.length; j++) {
+                            forCategories(categories, retLayer, docs[j]);
+                        }
+                    }
+                };
+                var forCategories = function (categories, retLayer, doc) {
+                    for (var i = 0; i < categories.length; i++) {
+                        var category = categories[i];
+                        if (retLayer[category.id] == undefined) {
+                            retLayer[category.id] = [];
+                        }
+                        var tagTitleValue = "";
+                        if (null != doc.getAttribute("tagTypeName") && "" != doc.getAttribute("tagTypeName") && undefined != doc.getAttribute("tagTypeName")) {
+                        	tagTitleValue = doc.getAttribute("tagTypeName");
+                        }
+                        if (null != doc.getAttribute("tagLabelName") && "" != doc.getAttribute("tagLabelName") && undefined != doc.getAttribute("tagLabelName")) {
+                        	tagTitleValue = tagTitleValue  + "\r\n" + doc.getAttribute("tagLabelName");
+                        }
+                        if (null != doc.getAttribute("comment") && "" != doc.getAttribute("comment") && undefined != doc.getAttribute("comment")) {
+                        	tagTitleValue = tagTitleValue  + "\r\n" + doc.getAttribute("comment");
+                        }
+                        if (!existsDoc(retLayer[category.id], doc)) {
+                            retLayer[category.id].push({
+                                code: doc.getAttribute("code"),
+                                dacsid: doc.getAttribute("dacsid"),
+                                important: parseBool(doc.getAttribute("important")),
+                                title: doc.getAttribute("title"),
+                                subTitle: doc.getAttribute("subTitle"),
+                                displayTitle: doc.getAttribute("displayTitle"),
+                                eventend: doc.getAttribute("eventend"),
+                                eventendTime: doc.getAttribute("eventendTime"),
+                                deptName: doc.getAttribute("departmentName"),
+                                delReqFlag: parseBool(doc.getAttribute("deleteRequestFlag")),
+                                hasPermissionFlag: parseBool(doc.getAttribute("hasPermissionFlag")),
+                                hasDLPermissionFlag: parseBool(doc.getAttribute("hasDLPermissionFlag")),
+                                editionNumber:doc.getAttribute("editionNumber"),
+                                patientId:doc.getAttribute("patientId"),
+                                status:doc.getAttribute("status"),
+                                departmentCode:doc.getAttribute("departmentCode"),
+                                tag:doc.getAttribute("tag"),
+                                tagTitle:tagTitleValue,
+                                shortTitle:doc.getAttribute("shortTitle")
+                            });
+                        }
+                    }
+                };
+                /**
+                 * 文書のdacsidをチェックする
+                 */
+                var existsDoc = function (docs, doc) {
+                    var dacsid = doc.getAttribute("dacsid");
+                    for (var i = 0; i < docs.length; i++) {
+                        if (docs[i].dacsid === dacsid) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                for (var i = 0; i < docTypeData.items.length; i++) {
+                    var item = docTypeData.items[i];
+                    if (item.docCodes == undefined && item.children != undefined) {
+                        // アイテムとサブアイテムの分類文書を設定
+                        categoryDocs[item.name] = {};
+                        for (var j = 0; j < item.children.length; j++) {
+                            var child = item.children[j];
+                            forEachDocCodes(child.docCodes, categoryDocs[item.name]);
+                        }
+                        for (var j = 0; j < item.children.length; j++) {
+                            var child = item.children[j];
+                            categoryDocs[child.name] = {};
+                            forEachDocCodes(child.docCodes, categoryDocs[child.name]);
+                        }
+                    } else {
+                        // Unclassified Layer
+                        categoryDocs[item.name] = {};
+                        forEachDocCodes(item.docCodes, categoryDocs[item.name]);
+                    }
+                }
+            }
+            return categoryDocs;
+        };
+        /**
+         * セルのツールチップを設定する
+         * @param cell セル
+         */
+        var setCellTooltip = function (cell) {
+            var cellTooltip = "";
+            var tipedDocCount = 0;
+            var items = cell.children();
+            ForItems: for (var i = 0; i < items.length; i++) {
+                var itemTooltip = items[i].title;
+                // 1つのブロックに複数文書を存在した
+                var tipLines = itemTooltip.split("\n");
+                if (tipLines.length + tipedDocCount > 10) {
+                    for (var j = 0; j < tipLines.length && j < 10; j++) {
+                        cellTooltip += tipLines[j] + "\n";
+                        tipedDocCount++;
+                        if (tipedDocCount == 10) {
+                            break ForItems;
+                        }
+                    }
+                } else {
+                    cellTooltip += itemTooltip + "\n";
+                    tipedDocCount += tipLines.length;
+                    if (tipedDocCount == 10) {
+                        break ForItems;
+                    }
+                }
+            }
+            // ツールチップに文書表示数 <= 10
+            if (cell.docCount > 10) {
+                cellTooltip +=
+                    general.extraFormatOfNormalCellTooltip.replace("{0}", cell.docCount - 10);
+            } else {
+                // 最後の「\n」を削除
+                cellTooltip = cellTooltip.substring(0, cellTooltip.length - 1);
+            }
+            cell.attr("title", cellTooltip);
+        };
+        /**
+         * セルの展開ボタンを追加する
+         * @param cell セル
+         */
+        var setExpandBtn = function (cell) {
+            // 最前の文書ブロック
+            var firstItem = cell.children().first();
+            var btn = $("<div unselectable='on' class='timeline-strata-cell-btn'></div>");
+            firstItem.mouseover(function () {
+                btn[0].style.display = "inline-block";
+            }).mouseout(function (event) {
+                if (event.toElement != btn[0])
+                    btn[0].style.display = "none";
+            });
+            btn[0].title = cell.attr("title");
+            btn[0].style.left = firstItem.width() - 18 + "px";
+            btn[0].style.top = 4 - (cell.children().length * 48) + "px";
+            btn[0].style.backgroundImage = "url(images/matrix/001/001_01.png)";
+            btn.mouseover(function () {
+                btn[0].style.backgroundImage = "url(images/matrix/001/001_03.png)";
+            }).mouseout(function (event) {
+                btn[0].style.backgroundImage = "url(images/matrix/001/001_01.png)";
+                if (event.toElement != firstItem[0])
+                    btn[0].style.display = "none";
+            }).mousedown(function () {
+                btn[0].style.backgroundImage = "url(images/matrix/001/001_02.png)";
+                return false;
+            }).mouseup(function () {
+                btn[0].style.backgroundImage = "url(images/matrix/001/001_03.png)";
+            }).click(function (event) {
+                selectedIds = [];
+                expandCell(cell, event);
+                return false;
+            }).appendTo(cell);
+        };
+        /**
+         * セルを展開する
+         * @param cell セル
+         * @param event マウスイベント
+         */
+        var expandCell = function (cell, event) {
+            var column = cell.parent();
+//          var columnIdx = column.parent().children().index(column);
+            var columnIdx = column.parent().find('.timeline-strata-column').index(column);
+            strata.showColIndex = [];
+            strata.showColIndex.push(columnIdx);
+            strata.setStrataSelectedDate(strata.showColIndex);
+            strata.showStrataDateRange(strata.showColIndex, false);
+            var timeRange = tl.getBandWithName("bodyBand")._etherPainter._band.getLineLayerAttrByDate(column[0].start, column[0].end);
+            var lineLayer = tl.getBandWithName("bodyBand")._etherPainter._lineLayer;
+            tl.getBandWithName("bodyBand")._etherPainter._band.showLineLayerDiv(lineLayer, timeRange);
+            var cellIdx = column.children().index(cell);
+            if (expandInfos[columnIdx] == undefined) {
+                expandInfos[columnIdx] = {};
+            }
+            if (event.shiftKey == false || event.shiftKey == 0) {
+                // その他セルを非展開設定
+                for (var idx in expandInfos) {
+                    if (idx != columnIdx) {
+                        delete(expandInfos[idx]);
+                    }
+                }
+                for (idx in expandInfos[columnIdx]) {
+                    if (idx != cellIdx) {
+                        delete(expandInfos[columnIdx][idx]);
+                    }
+                }
+            }
+            expandInfos[columnIdx][cellIdx] = true;
+            fillAs();
+        };
+        /**
+         * 展開のセルに文書選択変更のイベント
+         * @param mode 変更モード
+         * @param ids 文書IDアレイ
+         */
+        var selectedChanged = function (mode, ids) {
+            if (!selectedIds) {
+                selectedIds = [];
+            }
+            switch (mode) {
+                case "ADD":
+                    for (var i = 0; i < ids.length; i++) {
+                        selectedIds.pushIfNotContains(ids[i]);
+                    }
+                    break;
+                case "REMOVE":
+                    var temp = [];
+                    for (var i = 0; i < selectedIds.length; i++) {
+                        if (!ids.contains(selectedIds[i])) {
+                            temp.push(selectedIds[i]);
+                        }
+                    }
+                    selectedIds = temp;
+                    break;
+            }
+        };
+        /**
+         * selectedIdsを削除する
+         */
+        var cleanSelectedIds = function () {
+            selectedIds = [];
+        };
+        /**
+         * 展開のセルに内容を設定する
+         * @param cell セル
+         * @param docs 文書アレイ
+         * @param colorGroup 色グループ
+         * @param unclsified 未分類
+         */
+        var setExpandCellContent = function (cell, docs, colorGroup, unclsified) {
+            var column = cell.parent();
+            var columnIdx = column.parent().children().index(column);
+            var cellIdx = column.children().index(cell);
+            /**
+             * フォールドイベント
+             */
+            var foldEvent = function () {
+                delete(expandInfos[columnIdx][cellIdx]);
+                var isColExpand = false;
+                for (var idx in expandInfos[columnIdx]) {
+                    if (expandInfos[columnIdx][idx]) {
+                        isColExpand = true;
+                        break;
+                    }
+                }
+                if (!isColExpand) {
+                    delete(expandInfos[columnIdx]);
+                }
+                fillAs();
+            };
+            // セルに内容
+            cell[0].style.overflowY = "hidden";
+            var content = new ExpandCellContent(
+                    cell.width(), cell.height(), docs, cell, {
+                        basePath: basePath,
+                        selectedIds: selectedIds,
+                        onFoldEvent: foldEvent,
+                        getTemplateHtml: getTemplateHtml,
+                        general: general,
+                        textFormats: textFormats,
+                        ColorUtil: settings.ColorUtil,
+                        colorGroup: ColorUtil.parseColorGroup(colorGroup),
+                        newDocCtxMenu: unclsified
+                            ? thisTimeline.CtxMenu.newUnclsifiedDoc
+                            : thisTimeline.CtxMenu.newNormalDoc,
+                        onSelectedChanged: selectedChanged,
+                        colorGroup: colorGroup,
+                        jobPalette: settings.jobPalette,
+                        pushDocs: settings.pushDocs,
+                        onCleanSelectedIds:cleanSelectedIds,
+                        patient:patient,
+                        pairData:pairData
+                    }).appendTo(cell);
+            thisTimeline.CtxMenu.newFoldCell(foldEvent).on(content);
+        };
+        /**
+         * 選択文書を設定する
+         * @param ids 文書IDアレイ
+         */
+        strata.setSelectIds = function (ids) {
+            previewSelectedIds = ids;
+            expandInfos = {};
+        };
+        /**
+         * 文書選択した/しないのチェック
+         * @param docs 文書アレイ
+         */
+        var checkDocsIfSelected = function (docs) {
+            for (var i = 0; i < docs.length; i++) {
+                if (previewSelectedIds.contains(docs[i].dacsid)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        /**
+         * 充填完了後に、地層のレイアウトを調整する
+         */
+        var fillCompletedAdjust = function () {
+            // Forward & Back button
+            var adjust1 = function () {
+                if (rBtn[0].offsetTop != lBtn[0].offsetTop) {
+                    var lastBlock = rBtn[0].previousElementSibling;
+                    lastBlock.style.width = $(lastBlock).width() - 1 + "px";
+                    lastBlock = lastBlock.children[lastBlock.children.length - 1];
+                    lastBlock.style.width = $(lastBlock).width() - 1 + "px";
+                    asyncInvoke(adjust1);
+                }
+            };
+            adjust1();
+
+            // Timeline-waist
+            var blocks = waist.children();
+            if (blocks.length > 1) {
+                var adjust2 = function () {
+                    if (blocks[0].offsetTop != blocks[blocks.length - 1].offsetTop) {
+                        var lastBlock = blocks[blocks.length - 1];
+                        lastBlock.style.width = $(lastBlock).width() - 1 + "px";
+                        asyncInvoke(adjust2);
+                    }
+                };
+                adjust2();
+            }
+
+            // Strata columns
+            var cols = main.children();
+            if (cols.length > 1) {
+                var adjust3 = function () {
+                    if (cols[0].offsetTop != cols[cols.length - 1].offsetTop) {
+                        var lastCol = cols[cols.length - 1];
+                        lastCol.style.width = $(lastCol).width() - 1 + "px";
+                        asyncInvoke(adjust3);
+                    }
+                };
+                adjust3();
+            }
+
+            // Strata header
+            var children = headerContent[0].children;
+            if (children.length > 1) {
+                var lastBlock = children[children.length - 1];
+                if (lastBlock.offsetTop != lastBlock.previousElementSibling.offsetTop) {
+                    var contentWidth = headerContent[0].offsetWidth;
+                    var totalWidth = 0;
+                    for (var i = 0; i < children.length; i++)
+                        totalWidth += children[i].offsetWidth;
+
+                    var headerBlocks = headerContent.children(".timeline-header-block");
+                    var res = (totalWidth - contentWidth) % headerBlocks.length;
+                    var unitDx = (totalWidth - contentWidth - res) / headerBlocks.length;
+                    for (var i = 0; i < headerBlocks.length; i++)
+                        headerBlocks[i].style.width = headerBlocks[i].offsetWidth - unitDx + "px";
+                    for (var i = 0; i < res; i++)
+                        headerBlocks[i].style.width = headerBlocks[i].offsetWidth - 1 + "px";
+                }
+            }
+        };
+
+        // Events
+        lBtn.click(function () {
+            switch (strata.mode) {
+                case "D":
+                    strata.start.setDate(strata.start.getDate() - 1);
+                    strata.end.setDate(strata.end.getDate() - 1);
+                    break;
+                case "W":
+                    strata.start.setDate(strata.start.getDate() - 7);
+                    strata.end.setDate(strata.end.getDate() - 7);
+                    break;
+                case "M":
+                    strata.start.setMonth(strata.start.getMonth() - 1);
+                    strata.end.setMonth(strata.end.getMonth() - 1);
+                    break;
+                case "MS":
+                    strata.start.setMonth(strata.start.getMonth() - strata.modeDivision);
+                    strata.end.setMonth(strata.end.getMonth() - strata.modeDivision);
+                    break;
+                case "Y":
+                    strata.start.setFullYear(strata.start.getFullYear() - 1);
+                    strata.end.setFullYear(strata.end.getFullYear() - 1);
+                    break;
+                case "YS":
+                    strata.start.setFullYear(strata.start.getFullYear() - strata.modeDivision);
+                    strata.end.setFullYear(strata.end.getFullYear() - strata.modeDivision);
+                    break;
+            }
+            invokeCtrl.invoke(
+                    strata,
+                    strata.setTimeRange,
+                    [strata.start, strata.end]);
+            if (thisTimeline.selector != undefined) {
+                thisTimeline.selector.setVirtualRange(strata.start, strata.end);
+            }
+        });
+        rBtn.click(function () {
+            switch (strata.mode) {
+                case "D":
+                    strata.start.setDate(strata.start.getDate() + 1);
+                    strata.end.setDate(strata.end.getDate() + 1);
+                    break;
+                case "W":
+                    strata.start.setDate(strata.start.getDate() + 7);
+                    strata.end.setDate(strata.end.getDate() + 7);
+                    break;
+                case "M":
+                    strata.start.setMonth(strata.start.getMonth() + 1);
+                    strata.end.setMonth(strata.end.getMonth() + 1);
+                    break;
+                case "MS":
+                    strata.start.setMonth(strata.start.getMonth() + strata.modeDivision);
+                    strata.end.setMonth(strata.end.getMonth() + strata.modeDivision);
+                    break;
+                case "Y":
+                    strata.start.setFullYear(strata.start.getFullYear() + 1);
+                    strata.end.setFullYear(strata.end.getFullYear() + 1);
+                    break;
+                case "YS":
+                    strata.start.setFullYear(strata.start.getFullYear() + strata.modeDivision);
+                    strata.end.setFullYear(strata.end.getFullYear() + strata.modeDivision);
+                    break;
+            }
+            invokeCtrl.invoke(
+                    strata,
+                    strata.setTimeRange,
+                    [strata.start, strata.end]);
+            if (thisTimeline.selector != undefined) {
+                thisTimeline.selector.setVirtualRange(strata.start, strata.end);
+            }
+        });
+
+        // Methods
+        /**
+         * 地層の日付範囲を設定する
+         * @param start 開始日
+         * @param end 終了日
+         */
+        strata.setTimeRange = function (start, end) {
+            expandInfos = {};
+            selectedIds = [];
+            strata.start = MVCore.DateTime.clearInDay(newDate(start));
+            strata.end = MVCore.DateTime.clearInDay(newDate(end));
+            DAYS = (strata.end - strata.start) / (1000 * 60 * 60 * 24) + 1;
+//            var yearNum = end.getFullYear() - start.getFullYear() + 1;
+//            var monthNum = (yearNum - 1) * 12 + end.getMonth() - start.getMonth() + 1;
+//            if (yearNum >= 6) {
+//                waist[0].style.display = "none";
+//                //suchao del
+//               // strata[0].style.top = -(settings.docTypeBox.height() + 25) + "px";
+//            } else {
+//                waist[0].style.display = "block";
+//                //suchao del
+//               // strata[0].style.top = -(settings.docTypeBox.height() + 48) + "px";
+//            }
+//            waist[0].style.marginTop = "0px";
+//            if (DAYS <= 31) {
+//                strata.mode = "D";
+//                invokeCtrl.invoke(this, fillAsDay);
+//            } else if (DAYS <= 14 * 7) {
+//                strata.mode = "W";
+//                invokeCtrl.invoke(this, fillAsWeek);
+//            } else if (monthNum <= 24) {
+//                strata.mode = "M";
+//                invokeCtrl.invoke(this, fillAsMonth);
+//            } else if (yearNum < 6) {
+//                strata.mode = "MS";
+//                strata.modeDivision = Math.ceil(monthNum / 24);
+//                invokeCtrl.invoke(this, fillAsMonths);
+//            } else if (yearNum <= 18) {
+//                strata.mode = "Y";
+//                invokeCtrl.invoke(this, fillAsYear);
+//            } else {
+//                strata.mode= "YS";
+//                strata.modeDivision = Math.ceil(yearNum / 18);
+//                invokeCtrl.invoke(this, fillAsYears);
+//            }
+            
+           // var cellItem = _cellNumTabel.getTimeRangeMode(strata.start,strata.end);
+            var cellItem = strata.computeStrataHeight(strata.start,strata.end);
+            if (cellItem.mode == "D") {
+                strata.mode = "D";
+                invokeCtrl.invoke(this, fillAsDay);
+            } else if (cellItem.mode == "W") {
+                strata.mode = "W";
+                invokeCtrl.invoke(this, fillAsWeek);
+            } else if (cellItem.mode == "M") {
+                strata.mode = "M";
+                invokeCtrl.invoke(this, fillAsMonth);
+            } else if (cellItem.mode == "MS") {
+                strata.mode = "MS";
+                strata.modeDivision = cellItem.modeDivision;
+                invokeCtrl.invoke(this, fillAsMonths);
+            } else if (cellItem.mode == "Y") {
+                strata.mode = "Y";
+                invokeCtrl.invoke(this, fillAsYear);
+            } else {
+                strata.mode= "YS";
+                strata.modeDivision = cellItem.modeDivision;
+                invokeCtrl.invoke(this, fillAsYears);
+            }
+            
+            if (strata.mode == "Y" || strata.mode == "YS") {
+                waist[0].style.display = "none";
+            } else {
+                waist[0].style.display = "block";
+            }
+            waist[0].style.marginTop = "0px";
+            
+            invokeCtrl.invoke(this, fillCompletedAdjust);
+            if (strata.onTimeRangeChanged instanceof Function)
+                strata.onTimeRangeChanged(start, end);
+        };
+        /**
+         * 地層をリーペイント
+         * @param foldAll 全セルをフォールド
+         */
+        strata.repaintColumns = function (foldAll) {
+            if (foldAll) {
+                expandInfos = {};
+                selectedIds = [];
+            }
+            fillAs();
+        };
+        /**
+         * 地層存在マークをリーペイント
+         */
+        strata.repaintExistsMark = function () {
+            settings.drawLayerDocExistsMark.call(
+                    strata,
+                    getCategoryDocs(),
+                    getRealRange());
+        };
+        /**
+         * 地層の高さを設定/取得する
+         * @param val 値
+         */
+        strata.height = function (val) {
+            if (val === undefined) {
+                return strata.dy;
+            } else if (strata.dy != val) {
+                strata.dy = val;
+                main[0].style.height = val - 48 + "px";
+                fillAs();
+                return $().height.call(strata, val);
+            }
+        };
+        strata.computeStrataHeight = function (start, end) {
+                var cellItem = _cellNumTabel.getTimeRangeMode(start, end);
+                var strataMode = strata.mode;
+                if (strataMode == null) { //first load
+                   var topDiv = document.getElementById("head-area");
+                   var topDivHeight = topDiv.offsetHeight + topDiv.offsetTop;
+                   var footDivHeight = 44;
+                    var strataHeadCount = 2;
+                    if (cellItem.mode.charAt(0) == "Y") {
+                       strataHeadCount = 1;
+                    }
+                    var strataHeadHeight = 24 * strataHeadCount;
+                    docTypeBox.totalHeight = window.innerHeight -  (topDivHeight + 12) -  footDivHeight - strataHeadHeight;
+                 computeDocTypeBox();
+                 strata.dy = docTypeBox.totalHeight;
+                 main[0].style.height =  docTypeBox.totalHeight + "px";
+                } else {
+                 if (strataMode.charAt(0) == "Y" && cellItem.mode.charAt(0) != "Y") {
+                     docTypeBox.totalHeight -= 24;
+                     computeDocTypeBox();
+                     strata.dy = docTypeBox.totalHeight;
+                     main[0].style.height =  docTypeBox.totalHeight + "px";
+                 }
+                 if (strataMode.charAt(0) != "Y" && cellItem.mode.charAt(0) == "Y") {
+                     docTypeBox.totalHeight += 24;
+                     computeDocTypeBox();
+                     strata.dy = docTypeBox.totalHeight;
+                     main[0].style.height =  docTypeBox.totalHeight + "px";
+                 }
+                }
+
+             return cellItem;
+        };
+        /**
+         * 地層の幅を設定/取得する
+         * @param val 値
+         */
+        strata.width = function (val) {
+            if (val === undefined) {
+                return strata.dx;
+            } else if (strata.dx != val) {
+                strata.dx = val;
+                headerBody[0].style.width = val - 10 + "px";
+                headerContent[0].style.width = val - 42 + "px";
+                waist[0].style.width = val - 2 + "px";
+                main[0].style.width = val - 2 + "px";
+                invokeCtrl.invoke(
+                        strata,
+                        strata.setTimeRange,
+                        [strata.start, strata.end]);
+                fillAs();
+                return $().width.call(strata, val);
+            }
+        };
+
+        // Construct
+        main[0].style.marginTop = "-1px";
+        main[0].style.height = strata.dy - 48 + "px";
+        main[0].style.width = strata.dx - 2 + "px";
+        headerBody[0].style.width = strata.dx - 10 + "px";
+        headerContent[0].style.width = strata.dx - 42 + "px";
+        waist[0].style.width = strata.dx - 2 + "px";
+//        invokeCtrl.invoke(
+//                strata,
+//                strata.setTimeRange,
+//                [strata.start, strata.end]);
+
+        thisTimeline.strata = strata;
+        return strata;
+    };
+
+    /** タイムラインのコンテクスメニュー */
+    thisTimeline.CtxMenu = {
+        /** リスト表示のみ */
+        newListView : function (docs) {
+            var ctxMenu = new ContextMenu();
+            var ids = [];
+            for (var i = 0; i < docs.length; i++) {
+                if (!docs[i].delReqFlag) {
+                    ids.push(docs[i].dacsid);
+                }
+            }
+            ctxMenu.addItem("", textFormats.navigateSameCell, "", function () {
+                general.openFocusView(general.FOCUS_LIST_VIEW, general.BLANK,
+                        "", ids.join(","), general.NAVIGATE_RELATED_CODE_CELL);
+            });
+            return ctxMenu;
+        },
+        /** 同一グループとリスト表示 */
+        newGroupListView: function (docs, openGroupView) {
+            var ctxMenu = new ContextMenu();
+            var ids = [];
+            for (var i = 0; i < docs.length; i++) {
+                if (!docs[i].delReqFlag) {
+                    ids.push(docs[i].dacsid);
+                }
+            }
+            ctxMenu.addItem("", textFormats.navigateSameTreeCategory, "", openGroupView);
+            ctxMenu.addItem("", textFormats.navigateSameCell, "", function () {
+                general.openFocusView(general.FOCUS_LIST_VIEW, general.BLANK,
+                        "", ids.join(","), general.NAVIGATE_RELATED_CODE_CELL);
+            });
+            return ctxMenu;
+        },
+        /** フォールドセルのコンテクスメニュー */
+        newFoldCell: function (foldEvent) {
+            var ctxMenu = new ContextMenu();
+            ctxMenu.addItem("", textFormats.contractCell, "", foldEvent);
+            return ctxMenu;
+        },
+        /** 文書ブロックのコンテクスメニュー */
+        newDoc: function (normal, doc, foldEvent) {
+            var ctxMenu = new ContextMenu();
+            var validateDoc = function () {
+                if (doc.delReqFlag) {
+                    alertMsg(general.Messages.notByDeleteRequestedDocument);
+                    return false;
+                }
+                return true;
+            };
+            // 文書プロパティーダイアログ
+            ctxMenu.addItem("", textFormats.showProperty, "", function () {
+                if (!validateDoc()) return;
+                var prop = new DocProperties(
+                        doc.dacsid, doc.editionNumber, {
+                            basePath: basePath,
+                            getTemplateHtml: getTemplateHtml,
+                            DocProperty: general.DocumentProperty,
+                            getDocProp: settings.getDocProp,
+                            getDocVerify: settings.getDocVerify,
+                            textFormats: textFormats,
+                            LayerModelParam: general.LayerModelParam
+                        });
+                var dlg = new Dialog(prop, textFormats.showProperty,
+                        textFormats.propertyCloseButton).show();
+                dlg.closeBtn[0].style.marginTop = "14px";
+            }).addLine();
+            if (normal) {
+                // 同一グループ
+                ctxMenu.addItem("", textFormats.navigateSameTreeCategory, "", function () {
+                    if (!validateDoc()) return;
+                    general.openFocusView(general.FOCUS_MULTI_VIEW, general.BLANK,
+                            doc.dacsid, "", general.NAVIGATE_RELATED_CODE_GROUP, doc.dacsid, "");
+                });
+            }
+            // 同一日
+            ctxMenu.addItem("", textFormats.navigateSameDay, "", function () {
+                if (!validateDoc()) return;
+                general.openFocusView(general.FOCUS_MULTI_VIEW, general.BLANK,
+                        doc.dacsid, "", general.NAVIGATE_RELATED_CODE_DAY, doc.dacsid, "");
+            })
+            // 同一部位
+            .addItem("", textFormats.navigateSamePart, "", function () {
+                if (!validateDoc()) return;
+                if (!codesMap[doc.code].partsCode) {
+                    alertMsg(general.Messages.notDefinedSearchParts);
+                    return;
+                }
+                general.openFocusView(general.FOCUS_MULTI_VIEW, general.BLANK,
+                        doc.dacsid, "", general.NAVIGATE_RELATED_CODE_PART, doc.dacsid, "");
+            }).addLine()
+            // 通常表示に戻す
+            .addItem("", textFormats.contractCell, "", foldEvent);
+            return ctxMenu;
+        },
+        /** 通常の文書ブロック */
+        newNormalDoc: function (doc, foldEvent) {
+            return thisTimeline.CtxMenu.newDoc(true, doc, foldEvent);
+        },
+        /** 未分類の文書ブロック */
+        newUnclsifiedDoc: function (doc, foldEvent) {
+            return thisTimeline.CtxMenu.newDoc(false, doc, foldEvent);
+        }
+    };
+};
+
+/**
+ * 地層表示期間枠
+ * @param className クラス名
+ */
+/*
+var TransparentBox = function (className) {
+    if (!(this instanceof TransparentBox)) return;
+
+    var topDiv = $("<div unselectable='on'>")[0];
+    var bottomDiv = $("<div unselectable='on'>")[0];
+    var leftDiv = $("<div unselectable='on'>")[0];
+    var rightDiv = $("<div unselectable='on'>")[0];
+    var left = 0, top = 0, width = 8, height = 8;
+
+    topDiv.classList.add(className);
+    topDiv.style.height = "4px";
+
+    bottomDiv.classList.add(className);
+    bottomDiv.style.height = "4px";
+
+    leftDiv.classList.add(className);
+    leftDiv.style.width = "4px";
+    leftDiv.style.borderTopLeftRadius = "3px";
+    leftDiv.style.borderBottomLeftRadius = "3px";
+
+    rightDiv.classList.add(className);
+    rightDiv.style.width = "4px";
+    rightDiv.style.borderTopRightRadius = "3px";
+    rightDiv.style.borderBottomRightRadius = "3px";
+
+    box = $([topDiv, bottomDiv, leftDiv, rightDiv]);
+
+    box.left = function (val) {
+        if (val != undefined) {
+            left = val;
+            init();
+            return box;
+        } else {
+            return left;
+        }
+    };
+    box.top = function (val) {
+        if (val != undefined) {
+            top = val;
+            init();
+            return box;
+        } else {
+            return top;
+        }
+    };
+    box.width = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            width = val;
+            init();
+            return box;
+        } else {
+            return width;
+        }
+    };
+    box.height = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            height = val;
+            init();
+            return box;
+        } else {
+            return height;
+        }
+    };
+    box.right = function () {
+        return left + width;
+    };
+    box.bottom = function () {
+        return top + height;
+    };
+    box.offsetLeft = function () {
+        return leftDiv.offsetLeft;
+    };
+    box.hideLeft = function () {
+        leftDiv.style.display = "none";
+    };
+    box.showLeft = function () {
+        leftDiv.style.display = "inline";
+    };
+    box.hideRight = function () {
+        rightDiv.style.display = "none";
+    };
+    box.showRight = function () {
+        rightDiv.style.display = "inline";
+    };
+
+    function init() {
+        var offsetLeft = 0;
+        var offsetTop = 49;
+
+        leftDiv.style.left = left + offsetLeft;
+        leftDiv.style.top = top + offsetTop;
+        leftDiv.style.height = height;
+
+        rightDiv.style.left = left + width - 4 + offsetLeft;
+        rightDiv.style.top = top + offsetTop;
+        rightDiv.style.height = height;
+
+        topDiv.style.left = left + 4 + offsetLeft;
+        topDiv.style.top = top + offsetTop;
+        topDiv.style.width = width - 8;
+
+        bottomDiv.style.left = left + 4 + offsetLeft;
+        bottomDiv.style.top = top + height - 4 + offsetTop;
+        bottomDiv.style.width = width - 8;
+    }
+
+    init();
+    return box;
+};
+*/
+/**
+ * 展開のセルに内容
+ * @param width 幅 
+ * @param height 高さ
+ * @param origDocs 元文書
+ * @param settings 設定オブジェクト
+ */
+var ExpandCellContent = function (width, height, origDocs, cell, settings) {
+    if (!(this instanceof ExpandCellContent)) return;
+
+    var basePath = settings.basePath;
+    var selectedIds = settings.selectedIds;
+    /**
+     * フォールド時、セルに全文書を選択しない
+     */
+    var onFoldEvent = function () {
+        var ids = new Array();
+        for (var id in selectedDocs) {
+            if (selectedDocs[id]) {
+                ids.push(id);
+            }
+        }
+        onSelectedChanged("REMOVE", ids);
+        settings.onFoldEvent();
+        settings.onCleanSelectedIds();
+    };
+    var getTemplateHtml = settings.getTemplateHtml;
+    var general = settings.general;
+    var textFormats = settings.textFormats;
+    var colorGroup = settings.colorGroup;
+    var ColorUtil = settings.ColorUtil;
+    var newDocCtxMenu = settings.newDocCtxMenu;
+    var onSelectedChanged = settings.onSelectedChanged;
+//  var docs = [].concat(origDocs);
+    var patient = settings.patient;
+    var pairData = settings.pairData;
+    // 科の区別フラグ
+    var groupFlag = (pairData.hasGroupflag == 'true' ? true : false);
+    // ペア科ありフラグ
+    var hasPairDepFlag = (pairData.subDepartmentCode != '' ? true : false);
+    var pairDepCoid = pairData.subDepartmentCode;
+    // 自科文書
+    var userDepartmentDoc = [];
+    // ペア科文書
+    var pairDepartmentDoc = [];
+    // 他科文書
+    var otherDepartmentDoc = [];
+    var groupDocs = function (origDocs) {
+        var tempdocs = [];
+        if (groupFlag) {
+          for (var i = 0; i < origDocs.length; i++) {
+              if (patient.departmentCode == origDocs[i].departmentCode) {
+                  // 自科文書を設定処理
+                  userDepartmentDoc.push(origDocs[i]);
+              } else {
+                  if (hasPairDepFlag && origDocs[i].departmentCode == pairDepCoid) {
+                      // 自科文書を設定処理
+                      pairDepartmentDoc.push(origDocs[i]);
+                  } else {
+                      // 他科文書を設定処理
+                      otherDepartmentDoc.push(origDocs[i]);
+                  }
+              }
+          }
+          tempdocs = [].concat(userDepartmentDoc, pairDepartmentDoc, otherDepartmentDoc);
+      } else {
+        tempdocs = [].concat(origDocs);
+      }
+      return tempdocs;
+  };
+//  var docs = groupDocs(origDocs);
+    var removeDuplicateDoc = function (arr) {
+         var result = [], hash = {};
+         for (var i = 0, elem; (elem = arr[i]) != null; i++) {
+             if (!hash[elem.dacsid]) {
+                 result.push(elem);
+                 hash[elem.dacsid] = true;
+             }
+         }
+         return result;
+    };
+    var docs = groupDocs(removeDuplicateDoc(origDocs));
+  
+    var contentHTML = (function () {
+        if (ExpandCellContent.HTML == undefined) {
+            ExpandCellContent.HTML
+                = getTemplateHtml("ExpandCellContent")
+                    .replace("@DOC_NAME@", textFormats.ExpandCellHeaderTitle)
+                    .replace("@DOC_DATE@", textFormats.ExpandCellHeaderDate)
+                    .replace("@DOC_DEPT@", textFormats.ExpandCellHeaderDepartment)
+                    .replace("@DOC_STATUS@", textFormats.ExpandCellHeaderStatus)
+                    .replace("@DOC_TAG@", textFormats.ExpandCellHeaderTag)
+                    .replace("@DOC_NAME_MIN_EXP_WIDTH@", general.LayerModelParam.minDocNameExpWidth)
+                    .replace("@DOC_NAME_DEF_EXP_WIDTH@", general.LayerModelParam.minDocNameExpWidth)
+                    .replace("@DOC_DATE_MIN_EXP_WIDTH@", general.LayerModelParam.minDateExpWidth)
+                    .replace("@DOC_DATE_DEF_EXP_WIDTH@", general.LayerModelParam.minDateExpWidth)
+                    .replace("@DOC_DEPT_MIN_EXP_WIDTH@", general.LayerModelParam.minDepExpWidth)
+                    .replace("@DOC_DEPT_DEF_EXP_WIDTH@", general.LayerModelParam.minDepExpWidth)
+                    .replace("@DOC_STATUS_MIN_EXP_WIDTH@", general.LayerModelParam.minStatusExpWidth)
+                    .replace("@DOC_STATUS_DEF_EXP_WIDTH@", general.LayerModelParam.minStatusExpWidth + 3 + 16)
+                    .replace("@DOC_NAME_COL_MIN_EXP_WIDTH@", general.LayerModelParam.minDocNameExpWidth + 1)
+                    .replace("@DOC_NAME_COL_DEF_EXP_WIDTH@", general.LayerModelParam.minDocNameExpWidth + 1)
+                    .replace("@DOC_DATE_COL_MIN_EXP_WIDTH@", general.LayerModelParam.minDateExpWidth + 2)
+                    .replace("@DOC_DATE_COL_DEF_EXP_WIDTH@", general.LayerModelParam.minDateExpWidth + 2)
+                    .replace("@DOC_DEPT_COL_MIN_EXP_WIDTH@", general.LayerModelParam.minDepExpWidth + 2)
+                    .replace("@DOC_DEPT_COL_DEF_EXP_WIDTH@", general.LayerModelParam.minDepExpWidth + 2)
+                    .replace("@DOC_STATUS_COL_MIN_EXP_WIDTH@", general.LayerModelParam.minStatusExpWidth + 2)
+                    .replace("@DOC_STATUS_COL_DEF_EXP_WIDTH@", general.LayerModelParam.minStatusExpWidth + 2 + 16);
+        }
+        return ExpandCellContent.HTML;
+    })();
+    var tdHTML = "<div unselectable='on' class='expand-cell-content-td'></div>";
+
+    var that = $(contentHTML);
+    that[0].style.width = width + "px";
+    that[0].style.height = height + "px";
+    var header = that.children(".expand-cell-content-header");
+    var th = header.children(".expand-cell-content-th");
+    var separator = header.children(".expand-cell-content-th-separator");
+    var foldBtn = header.children(".expand-cell-content-fold-btn")[0];
+    var columns = that.children(".expand-cell-content-columns");
+    var sortIcon = $("<div class='expand-cell-content-sort-icon'></div>");
+
+    var selectedDocs = {};
+    var lastSelIdx = null;
+    // 文書範囲選択用の最初レコード番号
+    var startSelRowIndex = -1;
+    // 文書範囲選択用の最終レコード番号
+    var endSelRowIndex = -1;
+    // 文書選択該当レコード番号
+    var targetSelRowIndex = -1;
+    // <a>タグ要素追加/削除のフラグ
+    var linkChangeFlag = false;
+    // ShiftキーとCtrlキー押下のフラグ
+    var keyClickFlag = false;
+//  var Order = {
+//      Name: "name",
+//      Date: "date",
+//      Dept: "dept"
+//  };
+  var Order = {
+      Name: "name",
+      Date: "date",
+      Dept: "dept",
+      Status: "status"
+  };
+
+    // Events
+    th.mouseover(function () {
+        if (prevX) return;
+        this.style.backgroundColor = 'rgb(206,227,255)';
+        this.style.backgroundRepeat = 'no-repeat';
+    }).mouseout(function () {
+        this.style.backgroundImage = 'url(' + basePath + 'images/expand_cell_content_th_bg.png)';
+        this.style.backgroundRepeat = 'repeat-x';
+    }).mousedown(function () {
+        this.style.backgroundColor = 'rgb(148,190,255)';
+        this.style.backgroundRepeat = 'no-repeat';
+    }).mouseup(function () {
+        this.style.backgroundColor = 'rgb(206,227,255)';
+        this.style.backgroundRepeat = 'no-repeat';
+    });
+    var prevX, lTh, rTh;
+    /**
+     * セパレーターの移動前
+     * @param event マウスイベント
+     */
+    separator.mousedown(function (event) {
+        prevX = event.clientX;
+        lTh = this.previousElementSibling;
+        rTh = this.nextElementSibling;
+    });
+    /**
+     * セパレーターの移動
+     * @param event マウスイベント
+     */
+    header.mousemove(function (event) {
+        if (prevX) {
+            var dx = event.clientX - prevX;
+            prevX = event.clientX;
+            var getWidth = function (element) {
+                return parseFloat(element.style.width.replace("px", ""));
+            };
+            var lWidth = getWidth(lTh) + dx;
+            var rWidth = getWidth(rTh) - dx;
+            if (lWidth < 20 || rWidth < 20) {
+                return;
+            }
+            lTh.style.width = lWidth + "px";
+            rTh.style.width = rWidth + "px";
+            var lIdx = header.children().index(lTh) / 2;
+            var lColumn = columns.children()[lIdx];
+            var rColumn = columns.children()[lIdx + 1];
+            lColumn.style.width = getWidth(lColumn) + dx + "px";
+            rColumn.style.width = getWidth(rColumn) - dx + "px";
+        }
+    });
+    /**
+     * セパレーター移動終了
+     * @param event マウスイベント
+     */
+    var sepDragEnd = function (event) {
+        var inHeaderClasses = new Array(
+                "expand-cell-content-th-separator",
+                "expand-cell-content-th",
+                "expand-cell-content-title",
+                "expand-cell-content-sort-icon",
+                "expand-cell-content-fold-btn");
+        if (event.type == "mouseout"
+                && event.relatedTarget
+                && inHeaderClasses.contains(
+                        event.relatedTarget.className)) {
+            return;
+        }
+        prevX = undefined;
+        lTh = undefined;
+        rTh = undefined;
+    };
+    header.mouseup(sepDragEnd).mouseout(function (event) {
+        if (prevX) {
+            sepDragEnd(event);
+        } else {
+            foldBtn.style.display = "none";
+        }
+    });
+    header.mouseover(function () {
+        foldBtn.style.display = "inline-block";
+    });
+    $(foldBtn).mouseover(function () {
+        foldBtn.style.backgroundImage = "url(images/matrix/002/002_03.png)";
+    }).mouseout(function () {
+        foldBtn.style.backgroundImage = "url(images/matrix/002/002_01.png)";
+    }).mousedown(function () {
+        foldBtn.style.backgroundImage = "url(images/matrix/002/002_02.png)";
+    }).mouseup(function () {
+        foldBtn.style.backgroundImage = "url(images/matrix/002/002_03.png)";
+    }).click(onFoldEvent);
+    var DESC = true;
+    /**
+     * 文書ソート
+     */
+    th.click(function () {
+        var order;
+        DESC = !DESC;
+        switch (th.index(this)) {
+            case 0: order = Order.Name; break;
+            case 1: order = Order.Date; break;
+            case 2: order = Order.Dept; break;
+            case 3: order = Order.Status; break;
+        }
+        selectedDocs = {};
+        lastSelIdx = null;
+        sortDocs(order, DESC);
+        loadDocs(true);
+        sortIcon.remove();
+        sortIcon[0].style.backgroundImage =
+            "url(@basePath@images/sort_icon_@STATE@.png)"
+            .replace("@basePath@", basePath)
+            .replace("@STATE@", DESC ? "down" : "up");
+        sortIcon.appendTo(this);
+    });
+    /**
+     * 全文書未選択
+     */
+    columns.click(function (event) {
+        var clsNames = new Array(
+                "expand-cell-content-td",
+                "expand-cell-content-doc-icon",
+                "expand-cell-content-impt-icon");
+        if (event.target && clsNames.contains(event.target.className)) {
+            return;
+        }
+
+        selectedDocs = {};
+        lastSelIdx = null;
+        for (var i = 0; i < docs.length; i++) {
+            getRowTds(i).css("background-color", "rgba(0,0,0,0)");
+        }
+    });
+
+    // Methods
+    function init() {
+        var temp = new Array();
+        for (var i = 0; i < docs.length; i++) {
+            if (!temp.contains(docs[i].dacsid, "dacsid")) {
+                temp.push(docs[i]);
+            }
+        }
+        docs = temp;
+//      header[0].children[0].style.width = width - 176 + "px";
+//      columns[0].children[0].style.width = width - 175 + "px";
+        var tempwidth = general.LayerModelParam.minDateExpWidth + 
+                      general.LayerModelParam.minDepExpWidth + general.LayerModelParam.minStatusExpWidth + 12 + 16;
+        header[0].children[0].style.width = width - tempwidth + "px";
+        columns[0].children[0].style.width = width - tempwidth + 1 + "px";
+        columns[0].style.height = height - 24 + "px";
+        columns.children().css("min-height", height - 24 + "px");
+        foldBtn.style.backgroundImage = "url(images/matrix/002/002_01.png)";
+        foldBtn.style.left = width - 20 + "px";
+        for (var i = 0; selectedIds && i < selectedIds.length; i++) {
+            if (docs.contains(selectedIds[i], "dacsid")) {
+                selectedDocs[selectedIds[i]] = true;
+            }
+        }
+    }
+    function sortDocs(order, DESC) {
+        if (DESC == undefined) {
+            DESC = false;
+        }
+        var compAttr = function (doc1, doc2, attr) {
+            var ret = 0;
+            var val1 = doc1[attr];
+            var val2 = doc2[attr];
+            if (attr == "eventend") {
+                ret = new Date(val1 + " " + doc1.eventendTime)
+                    - new Date(val2 + " " + doc2.eventendTime);
+            } else {
+                ret = val1 > val2 ? 1 : (val1 == val2 ? 0 : -1);
+            }
+            return ret;
+        };
+        var attrs;
+        if (order == Order.Name) {
+            attrs = ["displayTitle", "eventend", "deptName", "status"];
+        } else if (order == Order.Date) {
+            attrs = ["eventend", "displayTitle", "deptName", "status"];
+        } else if (order == Order.Dept) {
+            attrs = ["deptName", "eventend", "displayTitle", "status"];
+        } else if (order == Order.Status) {
+            attrs = ["status", "deptName", "eventend", "displayTitle"];
+        }
+        var compFunc = function (doc1, doc2) {
+            var ret = 0;
+            for (var i = 0; i < attrs.length; i++) {
+                ret = compAttr(doc1, doc2, attrs[i]);
+                if (ret != 0) {
+                    break;
+                }
+            }
+            if (DESC) {
+                ret *= -1;
+            }
+            return ret;
+        };
+//      docs.sort(compFunc);
+      // 自科文書をソート
+      if (groupFlag) {
+          userDepartmentDoc.sort(compFunc);
+          // ペア科文書をソート
+          if (hasPairDepFlag && pairDepartmentDoc.length > 0) {
+              pairDepartmentDoc.sort(compFunc);
+          }
+          // 他科文書をソート
+          if (otherDepartmentDoc.length > 0) {
+              otherDepartmentDoc.sort(compFunc);
+          }
+          docs = [].concat(userDepartmentDoc, pairDepartmentDoc, otherDepartmentDoc);
+      } else {
+          docs.sort(compFunc);
+      }
+    }
+    
+    /**
+     * 文書一覧に、自科/ペア科/他科に最後に文書をチェック処理
+     */
+    function checkGroupLastTd(doc) {
+        var groupLastTdFlag = false;
+        if (userDepartmentDoc.length > 0 && userDepartmentDoc[userDepartmentDoc.length - 1].departmentCode == doc.departmentCode && 
+                userDepartmentDoc[userDepartmentDoc.length - 1].dacsid == doc.dacsid) {
+            groupLastTdFlag = true;
+        }
+        if (pairDepartmentDoc.length > 0 && pairDepartmentDoc[pairDepartmentDoc.length - 1].departmentCode == doc.departmentCode &&
+                pairDepartmentDoc[pairDepartmentDoc.length - 1].dacsid == doc.dacsid) {
+            groupLastTdFlag = true;
+        }
+        if (otherDepartmentDoc.length > 0 && otherDepartmentDoc[otherDepartmentDoc.length - 1].departmentCode == doc.departmentCode &&
+                otherDepartmentDoc[otherDepartmentDoc.length - 1].dacsid == doc.dacsid) {
+            groupLastTdFlag = true;
+        }
+        return groupLastTdFlag;
+    }
+    
+    /**
+     * 文書をロードする
+     * @param scrollAdjusted レイアウト調整した
+     */
+    function loadDocs(scrollAdjusted) {
+        if (scrollAdjusted == undefined) {
+            scrollAdjusted = false;
+        }
+        var cols = columns.children();
+        cols.html("");
+        var ids = new Array();
+        for (var i = 0; i < docs.length; i++) {
+            if (ids.contains(docs[i].dacsid)) {
+                continue;
+            } else {
+                ids.push(docs[i].dacsid);
+            }
+            var mergePatientId = docs[i].patientId;
+            var title = docs[i].displayTitle;
+            if (title.length >= 9) {
+                title = title.substring(0,8) + "...";
+            }
+            var tipTitle = general.getDocTooltip(docs[i]);
+            var date = docs[i].eventend.substring(5);
+            var deptName = docs[i].deptName;
+            var status = "";
+            if (docs[i].status == '1') {
+                status = textFormats.ExpandCellStatusCode1;
+            } else if (docs[i].status == '2') {
+                status = textFormats.ExpandCellStatusCode2;
+            } else if (docs[i].status == '4') {
+                status = textFormats.ExpandCellStatusCode4;
+            } else {
+                status = textFormats.ExpandCellStatusCode3;
+            }
+            var docIcon = $("<div unselectable='on' class='expand-cell-content-doc-icon'></div>")[0];
+            if (patientId == mergePatientId){
+                docIcon.style.backgroundImage =
+                    "url(images/matrix/025/025_" + ColorUtil.picCrGroup[colorGroup] + ")";
+            } else {
+                docIcon.style.backgroundImage =
+                    "url(images/matrix/025/500_" + ColorUtil.picCrGroup[colorGroup] + ")";
+            }
+            // 重要度アイコンの表示機能を削除する
+//          var imptIcon = docs[i].important
+//                        ? $("<div unselectable='on' class='expand-cell-content-impt-icon'></div>")
+//                              .css("background-image", "url(images/matrix/important_16.png)")
+//                        : null;
+            var tagIconPath = "images/tag/" + docs[i].tag;
+            var tagIcon = (docs[i].tagTitle != null && docs[i].tagTitle != '') ? 
+            		$("<div unselectable='on' class='expand-cell-content-impt-icon'><img src='" + tagIconPath + "' onerror='javascript:nofindIcon()'/></div>")
+                    : $("<div unselectable='on' class='expand-cell-content-impt-icon'></div>");
+            var groupLastTdFlag = checkGroupLastTd(docs[i]);
+            if ((i == docs.length - 1) && groupLastTdFlag) {
+                groupLastTdFlag = false;
+            }
+            var rowTds = new Array(
+//              newTd(title, tipTitle, docs[i].delReqFlag, cols[0], columns).prepend(imptIcon).prepend(docIcon).appendTo(cols[0]),
+//                newTd(title, tipTitle, docs[i].delReqFlag, cols[0], columns).prepend(tagIcon).prepend(docIcon).appendTo(cols[0]),
+//                newTd(date, date, docs[i].delReqFlag, cols[1], columns).appendTo(cols[1]),
+//                newTd(deptName, deptName, docs[i].delReqFlag, cols[2], columns).appendTo(cols[2]),
+//                newTd(status, status, docs[i].delReqFlag, cols[3], columns).appendTo(cols[3]));
+                newTd(title, tipTitle, docs[i].delReqFlag, cols[0], columns, groupLastTdFlag).prepend(tagIcon).prepend(docIcon).appendTo(cols[0]),
+                newTd(date, date, docs[i].delReqFlag, cols[1], columns, groupLastTdFlag).appendTo(cols[1]),
+                newTd(deptName, deptName, docs[i].delReqFlag, cols[2], columns, groupLastTdFlag).appendTo(cols[2]),
+                newTd(status, status, docs[i].delReqFlag, cols[3], columns, groupLastTdFlag).appendTo(cols[3]));
+            newDocCtxMenu(docs[i], onFoldEvent).on(rowTds);
+            if (selectedDocs[docs[i].dacsid]) {
+//                if (lastSelIdx == undefined || i < lastSelIdx) {
+//                    lastSelIdx = i;
+//                }
+//                addLinkelementToTD(columns, null, i);
+//                changeSelectedItemsBackGround(i, "rgb(148,190,255)", null);
+                if (lastSelIdx == undefined || ids.length - 1 < lastSelIdx) {
+                    lastSelIdx = ids.length - 1;
+                }
+                targetSelRowIndex = ids.length - 1;
+                startSelRowIndex = ids.length - 1;
+                addLinkelementToTD(columns, null, (ids.length - 1));
+                changeSelectedItemsBackGround((ids.length - 1), "rgb(148,190,255)", null);
+            }
+        }
+        if (docs.length * 24 > columns.height() && !scrollAdjusted) {
+            var last = columns.children().last();
+            last[0].style.width = last.width() - 17 + "px";
+        }
+        if (lastSelIdx) {
+            invokeCtrl.storage.push(
+                    function () {
+                        columns[0].scrollTop = lastSelIdx * 24;
+                    });
+        }
+        $(cols).click(function(evt,target) {
+            var trlength = docs.length * 24;
+            if (evt.offsetY > trlength) {
+                // 選択した文書を削除設定処理
+                for (var index = 0; index < docs.length; index++) {
+                    unselectIndex(index);
+                    removeLinkelementFromTD(columns, evt, index);
+                }
+            }
+        });
+    }
+    
+    /**
+     * UTF-8コードを変換処理
+     * @param str
+     * @returns UTF-8コード
+     */
+    function changeUtf8Code(str) {
+        var uft8Str = encodeURIComponent(str);
+        var arr = uft8Str.split('%');
+        for (var i = 0; i < arr.length; i++) {
+            var tempUtfStr = arr[i].substring(0,2);
+            arr[i] = tempUtfStr.toLowerCase() + arr[i].substring(2,arr[i].length);
+        }
+        return arr.join('%');
+    }
+    
+    /**
+     * 選択した文書にLinkのhref内容を追加処理
+     */
+    function getItemLink() {
+//        var linkItem = 'http://' + window.location.host + '/PEMasterPRM/Viewer/mrv/unifocus.action?';
+//        linkItem += 'patientId='+ patientId;
+//        for (var i = 0; selectedIds && i < docs.length; i++) {
+//            if (selectedDocs[docs[i].dacsid]) {
+//                linkItem += '&docid=' + docs[i].dacsid + '|' + docs[i].editionNumber;
+//            }
+//        }
+        var linkItem = '';
+        var pathname = 'http://' + window.location.host + '/PEMasterPRM/Viewer/mrv/unifocus.action?';
+        var patientItem = 'patientId='+ patientId;
+        var docItems = "";
+        for (var i = 0; selectedIds && i < docs.length; i++) {
+            if (selectedDocs[docs[i].dacsid]) {
+                var docInfo = docs[i].dacsid + '|' + docs[i].editionNumber + '|' + docs[i].code + '|'
+                              + docs[i].departmentCode + '|' + docs[i].deptName + '|' + docs[i].title + '|'
+                              + docs[i].shortTitle + '|' + docs[i].eventend;
+                docItems += '&docid=' + changeUtf8Code(docInfo);
+            }
+        }
+        linkItem = pathname + patientItem + docItems;
+        return linkItem;
+    }
+    
+    /**
+     * 選択した文書のbackgroundをクリア設定処理
+     * @param columns
+     * @returns
+     */
+    function cleanselectedItemBackGround(columns) {
+        var cols = columns.children();
+        for (var i = 0; i < cols.length; i++) {
+            var tdObjs = $(cols[i]).children();
+            for (var j=0;j<tdObjs.length;j++) {
+                var tdObj = tdObjs[j];
+                if (tdObj.tagName == 'A') {
+                    $(tdObj.children).css("background-color", "rgba(0,0,0,0)");
+                }
+                $(tdObj).css("background-color", "rgba(0,0,0,0)");
+            }
+        }
+    }
+    
+    /**
+     * 選択した文書のbackgroundを設定処理
+     * @param index
+     * @param backGroundColor
+     * @param defultBackGroundColor
+     * @returns
+     */
+    function changeSelectedItemsBackGround(index, backGroundColor, defultBackGroundColor) {
+        var tdObjs = getRowTds(index);
+        for (var i=0;i<tdObjs.length;i++) {
+            var tdObj = tdObjs[i];
+            if (tdObj != undefined && tdObj.tagName == 'A') {
+                if (null != defultBackGroundColor) {
+                    $(tdObj.children).css("background-color",
+                            selectedDocs[docs[index].dacsid] ? backGroundColor : defultBackGroundColor);
+                } else {
+                    $(tdObj.children).css("background-color", backGroundColor);
+                }
+            }
+            if (null != defultBackGroundColor) {
+                $(tdObj).css("background-color",
+                        selectedDocs[docs[index].dacsid] ? backGroundColor : defultBackGroundColor);
+            } else {
+                $(tdObj).css("background-color", backGroundColor);
+            }
+        }
+    }
+    
+    /**
+     * 選択した文書にLinkを追加設定処理
+     * @param columns
+     * @param event
+     * @param index
+     * @returns
+     */
+    function addLinkelementToTD (columns, event, index) {
+            var cols = columns.children();
+            for (var i =0; i< cols.length; i++) {
+                var colmun = cols[i];
+                var alink = document.createElement("a");
+                var allChildrenObjs = $(colmun).children();
+                if (allChildrenObjs[index].tagName != 'A') {
+                    var targetObj = $(allChildrenObjs[index]).clone(true);
+                    if ((index + 1) < allChildrenObjs.length) {
+                        var prependObj = allChildrenObjs[index+1];
+                        $(allChildrenObjs[index]).remove();
+                        $(alink).append(targetObj);
+                        $(prependObj).before(alink);
+                        linkChangeFlag = true;
+                    } else {
+                        $(allChildrenObjs[index]).remove();
+                        $(alink).append(targetObj);
+                        $(colmun).append(alink);
+                        linkChangeFlag = true;
+                    }
+                    $(alink).addClass('a_Selected');
+                    $(alink).mouseover(function (event){
+                        var index = getRowIndex($(alink));
+                        changeSelectedItemsBackGround(index, "rgb(206,227,255)", null);
+                        if ($($(event.target).parent()[0]).attr('href') != undefined && $($(event.target).parent()[0]).attr('href') != '') {
+                            addSelectedRowLinkHref(index, columns, null);
+                            linkChangeFlag = false;
+                            keyClickFlag = false;
+                        }
+                    });
+                    $(alink).mouseout(function (event) {
+                        var index = getRowIndex($(alink));
+                        changeSelectedItemsBackGround(index, "rgb(148,190,255)", "rgba(0,0,0,0)");
+                    });
+                    $(alink).mousedown(function (event) {
+                        if (event.ctrlKey && event.shiftKey) { 
+                            keyClickFlag = true;
+                            var itemLinks = getItemLink();
+                            addSelectedRowLinkHref(index, columns, itemLinks);
+                        }
+                        $(targetObj).on('mousedown');
+                    });
+                    $(alink).mouseup(function (event) {
+                        keyClickFlag = false;
+                        linkChangeFlag = false;
+                        if ($(alink).attr('href') != undefined && $(alink).attr('href') != '') {
+                            $(alink).attr('href', 'javascript:void(0);');
+                        }
+                    });
+                }
+            }
+    }
+    
+    /**
+     * 選択した文書にLinkのhrefを追加処理
+     * @param index
+     * @param columns
+     * @param itemLinks
+     * @returns
+     */
+    function addSelectedRowLinkHref(index, columns, itemLinks) {
+        var cols = columns.children();
+        for (var i =0; i< cols.length; i++) {
+            var colmun = cols[i];
+            var allChildrenObjs = $(colmun).children();
+            var linkObj = allChildrenObjs[index];
+            if (linkObj.tagName = 'A') {
+                $(linkObj).attr('href', itemLinks);
+            }
+        }
+    }
+    
+    /**
+     * 選択した文書にLinkを廃棄設定処理
+     * @param columns
+     * @param event
+     * @param idx
+     * @returns
+     */
+    function removeLinkelementFromTD (columns, event, idx) {
+        var cols = columns.children();
+        for (var i =0; i< cols.length; i++) {
+            var linkItems = $('a', cols[i]);
+            if (null != linkItems && linkItems.length > 0) {
+                for (var j=0; j<linkItems.length; j++) {
+                    var link = linkItems[j];
+                    var cloChildrens = $(cols[i]).children();
+                    var index = cloChildrens.index(link);
+                    if (idx == index) {
+                        var linkChild = $($(link).children()).clone(true);
+                        if ((index + 1) < cloChildrens.length) {
+                            $(cloChildrens[index+1]).before(linkChild);
+                            $(link).attr('href', null);
+                            $(link).remove();
+                            linkChangeFlag = true;
+                        } else {
+                            $(cols[i]).append(linkChild);
+                            $(link).attr('href', null);
+                            $(link).remove();
+                            linkChangeFlag = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /**
+     * インデックスによって、文書を選択する
+     * @param index インデックス
+     */
+    function selectIndex(index) {
+        lastSelIdx = index;
+        selectedDocs[docs[index].dacsid] = true;
+        onSelectedChanged("ADD", [docs[index].dacsid]);
+        changeSelectedItemsBackGround(index, "rgb(148,190,255)", null);
+    }
+    /**
+     * インデックスによって、文書の選択をキャンセルする
+     * @param index インデックス
+     */
+    function unselectIndex(index) {
+        delete(selectedDocs[docs[index].dacsid]);
+        onSelectedChanged("REMOVE", [docs[index].dacsid]);
+        changeSelectedItemsBackGround(index, "rgb(206,227,255)", null);
+    }
+    /**
+     * 文書データのブロック
+     * @param content 表示の内容
+     * @param tooltip ツールチップ
+     * @param delReqFlag 削除依頼フラグ
+     */
+    function newTd(content, tooltip, delReqFlag, colmun, columns, groupLastTdFlag) {
+        var td = $(tdHTML)[0];
+        td.innerHTML = content;
+        td.title = tooltip;
+        if (delReqFlag) {
+            td.style.color = "#8E8E8E";
+            td.style.fontStyle = "italic";
+        }
+        if (groupLastTdFlag) {
+            td.style.borderBottom = "solid 1px rgb(123,125,132)";
+        }
+        var dragging = false, divCreated = false;
+        return $(td).mouseover(function () {
+            var index = getRowIndex(this);
+            changeSelectedItemsBackGround(index, "rgb(206,227,255)", null);
+        }).mouseout(function () {
+            var index = getRowIndex(this);
+            changeSelectedItemsBackGround(index, "rgb(148,190,255)", "rgba(0,0,0,0)");
+        }).mousedown(function (event) {
+            // 文書選択のイベント
+            if (event.button == 2 || event.buttons == 2) {
+                return;
+            }
+            var index = getRowIndex(this);
+            dragging = true;
+            if (event.ctrlKey && event.shiftKey) {
+                keyClickFlag = true;
+            }
+            if (event.shiftKey && !event.ctrlKey) {
+                if (lastSelIdx == undefined) {
+                    return;
+                }
+                lastSelIdx = index;
+                endSelRowIndex = index;
+                if (startSelRowIndex == -1) {
+                    startSelRowIndex = index;
+                    targetSelRowIndex = index;
+                }
+                var itemp;
+                if (startSelRowIndex != targetSelRowIndex) {
+                    startSelRowIndex = targetSelRowIndex; 
+                }
+                if (startSelRowIndex > endSelRowIndex) {
+                    itemp = endSelRowIndex;
+                    endSelRowIndex = startSelRowIndex;
+                    startSelRowIndex = itemp;
+                }
+                for (var i = 0; i < docs.length; i++) {
+                    if (i >= startSelRowIndex && i <= endSelRowIndex) {
+                        if (!selectedDocs[docs[i].dacsid]) {
+                            selectIndex(i);
+                            addLinkelementToTD(columns, event, i);
+                        }
+                    } else if (selectedDocs[docs[i].dacsid]) {
+                        unselectIndex(i);
+                        removeLinkelementFromTD(columns, event, i);
+                    }
+                }
+            } else if (event.ctrlKey && !event.shiftKey) {
+                targetSelRowIndex = index;
+                startSelRowIndex = index;
+                if (selectedDocs[docs[index].dacsid]) {
+                    unselectIndex(index);
+                    removeLinkelementFromTD(columns, event, index);
+                } else {
+                    selectIndex(index);
+                    lastSelIdx = index;
+                    addLinkelementToTD(columns, event, index);
+                }
+            } else if (!selectedDocs[docs[index].dacsid]) {
+                var rmvIds = new Array();
+                for (var id in selectedDocs) {
+                    if (docs[index].dacsid != id) {
+                        delete(selectedDocs[id]);
+                        rmvIds.push(id);
+                    }
+                }
+                selectIndex(index);
+                lastSelIdx = index;
+                onSelectedChanged("REMOVE", rmvIds);
+                cleanselectedItemBackGround(columns);
+                changeSelectedItemsBackGround(index, "rgb(148,190,255)", null);
+            }
+        }).mouseup(function () {
+            dragging = false;
+            keyClickFlag = false;
+        }).mousemove(function (event) {
+            if (dragging && !divCreated) {
+                if (!linkChangeFlag) {
+                    if (!keyClickFlag) {
+                        var selDocs = new Array();
+                        for (var i = 0; selectedIds && i < docs.length; i++) {
+                            if (selectedDocs[docs[i].dacsid]) {
+                                selDocs.push(docs[i]);
+                            }
+                        }
+                        // 文書をドラッグ
+                        new DraggingDocs(event, selDocs, {
+                                jobPalette: settings.jobPalette,
+                                general: general,
+                                pushDocs: settings.pushDocs,
+                                colorGroup: settings.colorGroup
+                            }).appendTo("body")
+                            .onDragEnd = function () {
+                                dragging = false;
+                                divCreated = false;
+                            };
+                        divCreated = true;
+                    }
+                } else {
+                    linkChangeFlag = false;
+                }
+            }
+        }).click(function (event) {
+            if (event.ctrlKey || event.shiftKey) {
+                return;
+            }
+            dragging = false;
+            var index = getRowIndex(this);
+            var ids = new Array();
+            for (var i = 0; i < docs.length; i++) {
+                if (i != index && selectedDocs[docs[i].dacsid]) {
+                    ids.push(docs[i].dacsid);
+                    delete(selectedDocs[docs[i].dacsid]);
+                    getRowTds(i).css("background-color", "rgba(0,0,0,0)");
+                }
+            }
+            onSelectedChanged("REMOVE", ids);
+            selectIndex(index);
+            loadDocs(true);
+            general.openFocusView(general.FOCUS_SINGLE_VIEW, general.BLANK,
+                    docs[index].dacsid, "");
+        });
+    }
+    /**
+     * 行のインデックスを取得する
+     * @param td ブロック
+     * @returns インデックス
+     */
+    function getRowIndex(td) {
+        var column = $(td).parent();
+        if ($(td).parent()[0].tagName == 'A') {
+            column = $(td).parent().parent();
+            return column.children().index($(td).parent());
+        } else {
+            return column.children().index(td);
+        }
+    }
+    /**
+     * インデックスによって、指定の行にブロックを取得する
+     * @param index インデックス
+     * @returns ブロック
+     */
+    function getRowTds(index) {
+        var cols = columns.children();
+        var tds = new Array();
+        for (var i = 0; i < cols.length; i++) {
+            tds.push(cols[i].children[index]);
+        }
+        return $(tds);
+    }
+
+    // Construct
+    init();
+//    sortDocs(Order.Date);
+    var hasTimeSortFlag = (pairData.hasTimeSortFlag == 'true' ? true : false);
+    sortDocs(Order.Date, hasTimeSortFlag);
+    loadDocs();
+
+    return that;
+};
+
+/**
+ * 文書プロパティーダイアログ
+ * @param docId 文書ID
+ * @param settings 設定オブジェクト
+ */
+var DocProperties = function (docId, editionNumber, settings) {
+    if (!(this instanceof DocProperties)) return;
+
+    var basePath = settings.basePath;
+    var getTemplateHtml = settings.getTemplateHtml;
+    var DocProperty = settings.DocProperty;
+    var getDocProp = settings.getDocProp;
+    var getDocVerify = settings.getDocVerify;
+    var textFormats = settings.textFormats;
+    var LayerModelParam = settings.LayerModelParam;
+
+    var prop, verify, editFlag, tagProps;
+    var docProp = $(getTemplateHtml("DocProperties")
+            .replace("@DOC_PROPERTY@", textFormats.Property)
+            .replace("@DOC_VALUE@", textFormats.Value)
+            .replace("@TAG_TIME@", textFormats.propertyTagTime)
+            .replace("@TAG_USER_ID@", textFormats.propertyTagUserId)
+            .replace("@TAG_USER_NAME@", textFormats.propertyTagUserName)
+            .replace("@TAG_DEPT@", textFormats.propertyTagDept)
+            .replace("@TAG_TYPE@", textFormats.propertyTagType)
+            .replace("@TAG_COMMENT@", textFormats.propertyTagComment)
+            .replace("@TAG_OPTION_TYPE@", textFormats.propertyOptionType)
+            .replace("@TAG_TIME_WIDTH@", LayerModelParam.tagTimeWidth)
+            .replace("@TAG_TIME_COL_WIDTH@", LayerModelParam.tagTimeWidth + 6)
+            .replace("@TAG_USER_ID_WIDTH@", LayerModelParam.tagUserIdWidth)
+            .replace("@TAG_USER_ID_COL_WIDTH@", LayerModelParam.tagUserIdWidth + 7)
+            .replace("@TAG_USER_NAME_WIDTH@", LayerModelParam.tagUserNameWidth)
+            .replace("@TAG_USER_NAME_COL_WIDTH@", LayerModelParam.tagUserNameWidth + 7)
+            .replace("@TAG_DEPT_WIDTH@", LayerModelParam.tagDeptWidth)
+            .replace("@TAG_DEPT_COL_WIDTH@", LayerModelParam.tagDeptWidth + 7)
+            .replace("@TAG_TYPE_WIDTH@", LayerModelParam.tagTypeWidth)
+            .replace("@TAG_TYPE_COL_WIDTH@", LayerModelParam.tagTypeWidth + 7)
+            .replace("@TAG_COMMENT_WIDTH@", LayerModelParam.tagCommentWidth)
+            .replace("@TAG_COMMENT_COL_WIDTH@", LayerModelParam.tagCommentWidth + 7)
+            .replace("@TAG_OPTION_TYPE_WIDTH@", LayerModelParam.tagOptionTypeWidth)
+            .replace("@TAG_OPTION_TYPE_COL_WIDTH@", LayerModelParam.tagOptionTypeWidth + 7));
+    var header = docProp.children(".docproperties-header");
+    var waist = docProp.children(".docproperties-waist");
+    var separator = waist.children(".docproperties-waist-th-separator");
+    var tagWaist = docProp.children(".tagproperties-waist");
+    var tagTh = tagWaist.children(".tagproperties-waist-th");
+    var sortIcon = $("<div class='docproperties-waist-sort-icon'></div>");
+    var columns = docProp.children(".docproperties-columns");
+    var nameCol = $(columns[0].children[0]);
+    var valCol = $(columns[0].children[1]);
+    
+    var tagColumns =  docProp.children(".tagproperties-columns");
+    var timeCol = $(tagColumns[0].children[0]);
+    var userIdCol = $(tagColumns[0].children[1]);
+    var userNameCol = $(tagColumns[0].children[2]);
+    var deptCol = $(tagColumns[0].children[3]);
+    var tagTypeCol = $(tagColumns[0].children[4]);
+    var commentCol = $(tagColumns[0].children[5]);
+    var optionCol = $(tagColumns[0].children[6]);
+    
+    var tagPropHTML = "<div unselectable='on' class='tagproperties-td'></div>";
+
+    var hdItemHTML = "<div unselectable='on' class='docproperties-header-item'></div>";
+    var tdOddHTML = "<div unselectable='on' class='docproperties-td-odd'></div>";
+    var tdEvenHTML = "<div unselectable='on' class='docproperties-td-even'></div>";
+    var tableHTML =  "<table cellpadding='0' cellspacing='0' style='border-collapse:collapse;'></table>";
+    var trHTML = "<tr></tr>";
+    var tdEditHTML = "<td style='width:120px;'></td>";
+    var tdEditIconHTML = "<td><div class='prop_edit' style='background-image:url(images/matrix/001/001_01.png)'"+
+						    " onmouseover=\"this.style.backgroundImage='url(images/matrix/001/001_03.png)'\""+
+						    " onmouseout=\"this.style.backgroundImage='url(images/matrix/001/001_01.png)'\""+
+						    " onmousedown=\"this.style.backgroundImage='url(images/matrix/001/001_02.png)'\""+
+						    " onmouseup=\"this.style.backgroundImage='url(images/matrix/001/001_03.png)'\""+
+						    " onclick=\"javascript:openEditDialog('<%=session.getId()%>');\">"+
+						  "</div></td>";
+    var hiddenItemHTML = "<div style='display:none;'></div>";
+
+
+    var selectedIndex = 0, prevX, SortInfo = {};
+    var propMap = {maxCount: 0};
+    var propCates = {};
+    
+    // Methods
+    /**
+     * ヘッダをロード
+     */
+    function loadHeader() {
+        var headerIds = new Array(
+                "Medical",
+                "Basic",
+                prop.get("isPaperBorn") == "false" ? "Degital" : "Paper",
+                "Edoc",
+                "System",
+                "Tag");
+        
+        for (var i = 0; i < headerIds.length; i++) {
+            var propCate = DocProperty.filter(headerIds[i]);
+            propCates[i] = propCate;
+            propCate.index = i;
+            var hdItem = $(hdItemHTML)[0];
+                header.append(hdItem);
+            	hdItem.innerHTML = propCate.attr("name");
+                hdItem.onclick = hdItemClick;
+                if (selectedIndex == i) {
+                    hdItem.style.backgroundColor = "#EDEDED";
+                    hdItem.style.textDecoration = "none";
+                    loadProps(propCate);
+                }
+                SortInfo[i] = {desc: false};
+        }
+    }
+
+    /**
+     * プロパティーをロードする
+     * @param propCate プロパティー分類
+     */
+    function loadProps(propCate) {
+        nameCol[0].innerHTML = "";
+        valCol[0].innerHTML = "";
+        if (!propMap[propCate.index]) {
+            // プロパティー初期化
+            propMap[propCate.index] = [];
+            var attrs = propCate.children();
+            for (var i = 0; i < attrs.length; i++) {
+                if (attrs[i] instanceof Element) {
+                    var nvPair = getNVPair(attrs[i]);
+                    if (propCate.index == 3 // EDoc
+                            && nvPair.value == textFormats.propertyValueIfEmpty) {
+                        nvPair.value = textFormats.propertyValueOfSignInformationIfEmpty;
+                    }
+                    propMap[propCate.index].push(nvPair);
+                    renderPair(nvPair, i);
+                }
+            }
+            if (propMap[propCate.index].length > propMap.maxCount) {
+                propMap.maxCount = propMap[propCate.index].length;
+            } else if (propMap[propCate.index].length < propMap.maxCount){
+                renderToMaxCount();
+            }
+        } else {
+            var pairs = propMap[propCate.index];
+            for (var i = 0; i < pairs.length; i++) {
+                renderPair(pairs[i], i);
+            }
+            if (pairs.length < propMap.maxCount) {
+                renderToMaxCount();
+            }
+        }
+    }
+    /**
+     * 「名/値」を取得する
+     * @param attr 属性プロジェクト
+     * @returns {name: 名, value: 値}
+     */
+    function getNVPair(attr) {
+        var pair = {};
+        var refs = {};
+        pair.name = attr.getAttribute("name");
+        pair.textContent = attr.textContent;
+        for (var i = 0; i < attr.childNodes.length; i++) {
+            var child = attr.childNodes[i];
+            if (child instanceof Element) {
+                if (child.tagName == "attrId") {
+                    var src = child.getAttribute("source");
+                    var propName = child.textContent;
+                    if (src == "propXml") {
+                        pair.value = prop.get(propName);
+                    } else if (src == "verifyXml") {
+                        if (!verify) {
+                            verify = getDocVerify(docId, editionNumber);
+                        }
+                        pair.value = verify.get(propName);
+                    }
+                } else if (child.tagName == "Ref") {
+                    refs[child.getAttribute("value")] = child.textContent;
+                }
+            }
+        }
+        if (refs[pair.value] != undefined) {
+            pair.value = refs[pair.value];
+        }
+        if (pair.value == "") {
+            pair.value = textFormats.propertyValueIfEmpty;
+        }
+        return pair;
+    }
+    
+    function getTagColumn(attrs) {
+        timeCol[0].innerHTML = "";
+        userIdCol[0].innerHTML = "";
+        userNameCol[0].innerHTML = "";
+        deptCol[0].innerHTML = "";
+        tagTypeCol[0].innerHTML = "";
+        commentCol[0].innerHTML = "";
+        optionCol[0].innerHTML = "";
+        var tdHtml = tagPropHTML;
+        if (!tagProps) {
+        	tagProps = getTagProp(docId, editionNumber);
+        }
+        for (var j = 0; j < tagProps.length; j++) {
+        	for (var i = 0; i < attrs.length; i++) {
+        		var value = getTagPropValue(attrs[i], tagProps[j]);
+        		if (value != null) {
+	                switch(i){
+	                case 0:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(timeCol);
+	                    break;
+	                case 1:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(userIdCol);
+	                    break;
+	                case 2:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(userNameCol);
+	                    break;
+	                case 3:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(deptCol);
+	                    break;
+	                case 4:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(tagTypeCol);
+	                    break;
+	                case 5:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(commentCol);
+	                    break;
+	                case 6:
+	                	$(tdHtml).attr("title", value).html(value).appendTo(optionCol);
+	                    break;
+	                default:
+	                }
+        		}
+             }
+        	if (timeCol[0].clientHeight > tagColumns[0].clientHeight) {
+        		optionCol.css("width","47px");
+        	}
+         }
+     }
+        
+    function getTagPropValue(attr,tagProp) {
+    	var propValue = null;
+    	for (var m = 0; m < attr.childNodes.length; m++) {
+			var child = attr.childNodes[m];
+            if (child instanceof Element) {
+                if (child.tagName == "attrId") {
+                    var src = child.getAttribute("source");
+                    var propName = child.textContent;
+                    if (src == "propXml" && tagProp.getElementsByTagName(propName).length > 0) {
+                    	propValue = tagProp.getElementsByTagName(propName)[0].textContent;
+                    }
+                    break;
+                } 
+            }
+		}
+    	return propValue;
+    }
+    
+   
+    /**
+     * 「名/値」ブロックをペイントする
+     * @param pair 「名/値」オブジェクト
+     * @param index インデックス
+     */
+    function renderPair(pair, index) {
+    	var tdHtml = index % 2 == 0 ? tdEvenHTML : tdOddHTML;
+    	if (editFlag) {
+    		if (pair.textContent == "code") {
+       		 $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+   	   		 $(tdEditHTML).html(pair.value).attr("title",pair.value).attr("id","docCode1").appendTo($(trHTML).appendTo($(tableHTML).appendTo($(tdHtml).appendTo(valCol))));
+   	   		 $(valCol).find("#docCode1").parent().append($(tdEditIconHTML));
+    		} else if (pair.textContent == "deptCode") {
+	   	   		 $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+	   	   		 $(tdEditHTML).html(pair.value).attr("title",pair.value).attr("id","deptCode1").appendTo($(trHTML).appendTo($(tableHTML).appendTo($(tdHtml).appendTo(valCol))));
+	   	   		 $(valCol).find("#deptCode1").parent().append($(tdEditIconHTML));	         
+	   	   	} else if (pair.textContent == "eventbegin") {
+	   	   		 $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+	   	   		 $(tdEditHTML).html(pair.value).attr("title",pair.value).attr("id","beginDate1").appendTo($(trHTML).appendTo($(tableHTML).appendTo($(tdHtml).appendTo(valCol))));
+	   	   		 $(valCol).find("#beginDate1").parent().append($(tdEditIconHTML));	         
+	   	   	} else if (pair.textContent == "eventend") {
+	        		 $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+	   	   		 $(tdEditHTML).html(pair.value).attr("title",pair.value).attr("id","endDate1").appendTo($(trHTML).appendTo($(tableHTML).appendTo($(tdHtml).appendTo(valCol))));
+	   	   		 $(valCol).find("#endDate1").parent().append($(tdEditIconHTML));
+	       	} else {
+		         $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+		         $(tdHtml).html(pair.value).attr("title", pair.value).appendTo(valCol);
+	    	}
+    	}
+    	 else {
+	         $(tdHtml).html(pair.name).attr("title", pair.name).appendTo(nameCol);
+	         $(tdHtml).html(pair.value).attr("title", pair.value).appendTo(valCol);
+    	}
+    }
+    /**
+     * 空のブロックによって、充填する
+     */
+    function renderToMaxCount() {
+        var crtCount = nameCol.children().length;
+        while (crtCount < propMap.maxCount) {
+            renderPair({}, crtCount++);
+        }
+    }
+    function initWaist() {
+        var ths = separator.siblings();
+        ths.mouseover(function () {
+            if (prevX) return;
+            this.style.backgroundColor = 'rgb(206,227,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        }).mouseout(function () {
+            this.style.backgroundImage = 'url(' + basePath + 'images/docproperties_th_bg.png)';
+            this.style.backgroundRepeat = 'repeat-x';
+        }).mousedown(function () {
+            this.style.backgroundColor = 'rgb(148,190,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        }).mouseup(function () {
+            this.style.backgroundColor = 'rgb(206,227,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        });
+        ths[0].onclick = function () {
+            sortProps.call(this, "name");
+        };
+        ths[1].onclick = function () {
+            sortProps.call(this, "value");
+        };
+
+        tagTh.mouseover(function () {
+            this.style.backgroundColor = 'rgb(206,227,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        }).mouseout(function () {
+            this.style.backgroundImage = 'url(' + basePath + 'images/docproperties_th_bg.png)';
+            this.style.backgroundRepeat = 'repeat-x';
+        }).mousedown(function () {
+            this.style.backgroundColor = 'rgb(148,190,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        }).mouseup(function () {
+            this.style.backgroundColor = 'rgb(206,227,255)';
+            this.style.backgroundRepeat = 'no-repeat';
+        });
+    }
+    /**
+     * プロパティーをソートする
+     * @param order オーダー
+     */
+    function sortProps(order) {
+        SortInfo[selectedIndex].desc = !SortInfo[selectedIndex].desc;
+        SortInfo[selectedIndex].order = order;
+        renderSortIcon();
+        propMap[selectedIndex].sort(function (pair1, pair2) {
+            var ret = 0;
+            ret = pair1[order] > pair2[order] ? 1 : (pair1[order] == pair2[order] ? 0 : -1);
+            if (SortInfo[selectedIndex].desc) {
+                ret *= -1;
+            }
+            return ret;
+        });
+        loadProps(propCates[selectedIndex]);
+    }
+    /**
+     * ソートアイコン
+     */
+    function renderSortIcon() {
+        sortIcon.remove();
+        sortIcon[0].style.backgroundImage =
+                "url(@basePath@images/sort_icon_@STATE@.png)"
+                    .replace("@basePath@", basePath)
+                    .replace("@STATE@", SortInfo[selectedIndex].desc ? "down" : "up");
+        var th;
+        switch (SortInfo[selectedIndex].order) {
+            case "name":
+                th = separator.siblings()[0];
+                break;
+            case "value":
+                th = separator.siblings()[1];
+                break;
+        }
+        sortIcon.appendTo(th);
+    }
+
+    // Events
+    function hdItemClick() {
+        var item = $(this);
+        var index = item.parent().children().index(this);
+        //Tag
+        if (index == 5) {            
+        	docProp.children(".doc").css("display","none");
+        	docProp.children(".tag").css("display","");
+        	docProp.css("width","577px");
+        	if (index != selectedIndex) {
+                item.siblings().css({
+                    "background-color": "#DEDEDE",
+                    "text-decoration": "underline"
+                });
+                item[0].style.backgroundColor = "#EDEDED";
+                item[0].style.textDecoration = "none";
+                var attrs = propCates[index].children();
+                getTagColumn(attrs);
+                //loadProps(propCates[index]);
+                selectedIndex = index;
+            }
+        } else {
+        	docProp.children(".doc").css("display","");
+        	docProp.children(".tag").css("display","none");
+        	docProp.css("width","450px");
+            if (index != selectedIndex) {
+                item.siblings().css({
+                    "background-color": "#DEDEDE",
+                    "text-decoration": "underline"
+                });
+                item[0].style.backgroundColor = "#EDEDED";
+                item[0].style.textDecoration = "none";
+                loadProps(propCates[index]);
+                selectedIndex = index;
+                renderSortIcon();
+            }
+        }
+    }
+    separator.mousedown(function (event) {
+        prevX = event.clientX;
+    });
+    waist.mousemove(function (event) {
+        if (prevX) {
+            var dx = event.clientX - prevX;
+            prevX = event.clientX;
+            var nameTh = $(separator.siblings()[0]);
+            var valTh = $(separator.siblings()[1]);
+            if (nameTh.width() + dx > 10 && valTh.width() - dx > 10) {
+                nameTh[0].style.width = nameTh.width() + dx;
+                valTh[0].style.width = valTh.width() - dx;
+                nameCol[0].style.width = nameCol.width() + dx;
+                valCol[0].style.width = valCol.width() - dx;
+            }
+        }
+    });
+    var clsPrevX = function (event) {
+        if (event.type == "mouseout" && event.target
+                && event.target.className.indexOf("docproperties-waist-") == 0) {
+            return;
+        }
+        prevX = undefined;
+    };
+    waist.mouseup(clsPrevX).mouseout(clsPrevX);
+
+    // Construct
+    prop = getDocProp(docId, editionNumber);
+    if (prop.get("latestFlag") == "true" && prop.get("innerDocFlag") == "true") {
+    	editFlag = true;
+    } else {
+    	 editFlag = false;
+    }
+    loadHeader();
+    initWaist();
+    
+    $(hiddenItemHTML).val(prop.get("dacsid")).attr("id", "docId").appendTo($(docProp));
+    $(hiddenItemHTML).val(prop.get("editionNumber")).attr("id", "editionNumber").appendTo($(docProp));
+    $(hiddenItemHTML).html(prop.get("code")).attr("id", "docCode").appendTo($(docProp));
+    $(hiddenItemHTML).html(prop.get("deptCode")).attr("id", "deptCode").appendTo($(docProp));
+    $(hiddenItemHTML).html(prop.get("eventbegin")).attr("id", "beginDate").appendTo($(docProp));
+    $(hiddenItemHTML).html(prop.get("eventend")).attr("id", "endDate").appendTo($(docProp));
+    
+    return docProp;
+};
+
+/**
+ * 文書ドラッグ
+ * @param MSEvent マウスイベント
+ * @param docs 文書アレイ
+ * @param settings 設定オブジェクト
+ */
+var DraggingDocs = function (MSEvent, docs, settings) {
+    if (!(this instanceof DraggingDocs)) return;
+
+    var jobPalette = settings.jobPalette;
+    var content = settings.content;
+    var pushDocs = settings.pushDocs;
+    var general = settings.general;
+
+    var docsDiv = $("<div unselectable='on' class='dragging-docs' style='z-index:900'></div>");
+    docsDiv[0].style.left = MSEvent.clientX - 10 + "px";
+    docsDiv[0].style.top = MSEvent.clientY - 10 + "px";
+
+    var paletteBody = jobPalette.children(".jobpalette-body");
+    var docPanel = paletteBody.children(".jobpalette-doc-panel")[0];
+    /** 作業パレットの範囲 */
+    var area = {
+//        left: IEVersion == 11 ? jobPalette[0].offsetLeft : paletteBody[0].offsetLeft,
+//        top: IEVersion == 11 ? jobPalette[0].offsetTop + 24 : paletteBody[0].offsetTop,
+//        right: (IEVersion == 11 ? jobPalette[0].offsetLeft : paletteBody[0].offsetLeft) + docPanel.offsetWidth,
+//        bottom: (IEVersion == 11 ? jobPalette[0].offsetTop + 24 : paletteBody[0].offsetTop) + docPanel.offsetHeight,
+        isIn: function (event) {           
+//            return event.clientX > area.left && event.clientX < area.right
+//                    && event.clientY > area.top && event.clientY < area.bottom;
+            var pos = MVCore.DOM.getEventRelativeCoordinates(event,docPanel);
+            return pos.x > 0 && pos.y > 0 && pos.x < docPanel.offsetWidth && pos.y < docPanel.offsetHeight;
+        }
+    };
+    var droppable = false;
+
+    // Events
+    /**
+     * 文書ドラッグのイベント
+     * @param event マウスイベント
+     */
+    var divPos = function (event) {
+        docsDiv[0].style.left = event.clientX - 10 + "px";
+        docsDiv[0].style.top = event.clientY - 10 + "px";
+        if (area.isIn(event)) {
+            // ドロップ可
+            docsDiv[0].style.borderColor = "green";
+            droppable = true;
+        } else {
+            // ドロップ不可
+            docsDiv[0].style.borderColor = "red";
+            droppable = false;
+        }
+    };
+    $("body").mousemove(divPos);
+    docsDiv.mousemove(divPos).mouseup(function () {
+        // 文書ドラッグ終了
+        docsDiv.remove();
+        delete(this);
+        if (docsDiv.onDragEnd) {
+            docsDiv.onDragEnd();
+        }
+        if (droppable) {
+            pushDocs(docs, settings.colorGroup);
+        }
+    });
+
+    // Mehods
+    /**
+     * コンテントによって、ブロックをレイアウトする
+     */
+    function loadContent() {
+        var clone = $(content[0].outerHTML);
+        docsDiv.append(clone);
+    }
+    /**
+     * 文書アレイによって、ブロックをレイアウトする
+     */
+    function loadDocs() {
+        for (var i = 0; i < docs.length; i++) {
+            var disTitle = general.getDocTooltip(docs[i]);
+            var item = $("<div unselectable='on'></div>")[0];
+            item.innerHTML = docs[i].displayTitle + " " + docs[i].eventend + " " + docs[i].deptName;
+            item.title = disTitle;
+            docsDiv.append(item);
+        }
+    }
+
+    // Construct
+    if (content) {
+        loadContent();
+    } else {
+        loadDocs();
+    }
+
+    return docsDiv;
+};
+
+var _cellNumTabel = null;
+/**
+ * セル日数対応表(テーブル)アクションのハンドラー
+ * @param cellData XMLオブジェクト
+ */
+function cellNumberHandler(cellData) {
+    _cellNumTabel = new MVCore.CellNumber();
+    var root = cellData.childNodes[0];
+    if (root != null) {
+        _cellNumTabel.cellMinWidth = root.getAttribute("cellMinWidth");
+        var rows = cellData.childNodes[0].childNodes;
+        for (var i = 0; i < rows.length; i++) {
+            var period = rows[i].getAttribute("period");
+            var cellNum = rows[i].getAttribute("cellNum");
+            _cellNumTabel.add({period:period, cellNumDB:cellNum, mode:"",modeDivision:1});
+        }
+    }
+}
