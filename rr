@@ -1,0 +1,2987 @@
+// Data
+var _today = new Date();
+var _firstDocDate = new Date(), _latestDocDate = new Date();
+var _general, _textFormats, _patient, _reports, _documents,
+    _jqDocs, _depCodes, _docCodes, _codesMap, _eventDocs,
+    _treeCategory, propertyUrl, verifyUrl, tagPropertyUrl, initDates,
+    matrixMaxPeriod, timeLineMaxPeriod, timeLineAfterMarginPeriod, timeLineBeforeMarginPeriod,
+    _weekFromBeforeHospital, _countEventsBySnapping,
+    _pairData,
+    firstDocFlag = false;
+var flagTableRows = [], colorTableRows = [], rangeOptions = [], tagViewModeOptions = [];
+var todayIndex = 49;
+var rateChanging = false;
+var departmentData = {
+    width: "195px",
+    items: []
+};
+var docTypeData = {
+    width: "195px",
+    items: []
+};
+//作業パレットでダウンロードボタンの表示設定
+var downloadVisible = false;
+var patientId;
+
+// JSP Variable
+var loginuuid, reqpi, requuid, imgRoot;
+var alertDlg;
+
+/** IEのバージョンを取得する */
+var IEVersion = (function () {
+    if (!("ActiveXObject" in window)) {
+        return -1;
+    } else if (/MSIE 10\.0/.test(navigator.appVersion)) {
+        return 10;
+    } else if (/rv:11\.0/.test(navigator.appVersion)) {
+        return 11;
+    } else {
+        return 0;
+    }
+})();
+
+
+/**
+  * 画面にメッセージを表示する
+  * @param message メッセージ
+  * @param typetype
+  */
+function alertMsg(message, type) {
+     if (alertDlg == undefined) {
+         alertDlg = new Dialog("", "", "OK", "MODAL");
+         alertDlg.closeBtn[0].style.marginTop = "14px";
+         alertDlg.width(300);
+     }
+     if(type==null||type==undefined){
+         type="";
+     }
+     alertDlg.setTitle(message.code)
+         .setContent(message.msg + type)
+         .show("CENTER");
+}
+
+/**
+ * ブーリアン値をパースする
+ * @param str 文字列値
+ * @returns ブーリアン値
+ */
+function parseBool(str) {
+    if (typeof(str) == "boolean") {
+        return str;
+    } else if (str == "false" || str == "") {
+        return false;
+    } else if (str == "true") {
+        return true;
+    } else {
+        throw "Parse To Boolean Error: " + str;
+    }
+}
+
+/**
+ * URLからXMLオブジェクトを取得する
+ * @param url 要求URL
+ * @param callback XMLオブジェクト取得後に、このメソッドを呼び出す
+ * @returns XMLオブジェクト
+ */
+function getXmlFromUrl(url, callback) {
+    var ret = null;
+    $.ajax({
+        url: url + (url.indexOf("?") != -1 ? "&" : "?")
+            + 'loginuuid=' + loginuuid
+            + '&reqpi=' + reqpi
+            + '&requuid=' + requuid,
+        async: false,
+        cache: false,
+        dataType: "text",
+        success: function (data) {
+            try {
+                if (window["DOMParser"] != undefined) {
+                    ret = new DOMParser().parseFromString(data, "text/xml");
+                } else {
+                    var objXml = new ActiveXObject("MSXML2.DOMDocument");
+                    objXml.loadXML(data);
+                    ret = objXml;
+                }
+                var retFlag = false;
+                if ((ret == null || ret.length == 0 || ret.childNodes[0] == null || ret.childNodes[0].length == 0)) {
+                    retFlag = true;
+                }
+                if (url.indexOf("general") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "General"))) {
+                    alertMsg(Messages["MRV-1002"], "GNRL");
+                } else if (url.indexOf("textFormats") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "TextFormats"))) {
+                    alertMsg(Messages["MRV-1002"], "TextFormats");
+                } else if (url.indexOf("reports") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "reports"))) {
+                    alertMsg(Messages["MRV-1002"], "REPT");
+                } else if (url.indexOf("layers") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "layers"))) {
+                    alertMsg(Messages["MRV-1002"], "LAYR");
+                } else if (url.indexOf("events") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "events"))) {
+                    alertMsg(Messages["MRV-1002"], "EVNT");
+                } else if (url.indexOf("doccodes") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "DocCodes"))) {
+                    alertMsg(Messages["MRV-1002"], "DocCodes");
+                } else if (url.indexOf("cellNumbers") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "PeriodCellNumbers"))) {
+                    alertMsg(Messages["MRV-1002"], "MRVPeriodCellNumbers");
+                } else if (url.indexOf("pairData") > 0
+                        && (retFlag || (ret.childNodes[0].nodeName != "PairData"))) {
+                    alertMsg(Messages["MRV-1002"], "PairData");
+                } else if(retFlag){
+                    alertMsg(Messages["MRV-1002"]);
+                }
+            } catch (ex) {
+                alertMsg(Messages["MRV-1003"]);
+            }
+        },
+        error: function () {
+            alertMsg(Messages["MRV-1001"]);
+        }
+    });
+    if (callback instanceof Function) {
+        if (ret != undefined) {
+            callback(ret);
+            return true;
+        } else {
+            return false;
+        }
+    }
+    return ret;
+}
+
+// XML Handler
+/**
+ * Generalアクションのハンドラー
+ * @param general XMLオブジェクト
+ */
+function generalHandler(general) {
+    _general = $(general.childNodes[0]);
+
+    // 凡例ダイアログ
+    var icons = _general.children("Timeline").children("icon");
+    var parts = _general.children("PartCode").children("part");
+    for (var i = 0; i < icons.length; i++) {
+        flagTableRows.push({
+            flag: "<div unselectable='on' class='icon @swcClassName@'></div>"
+                .replace("@swcClassName@", icons[i].getAttribute("swcClassName")),
+            meaning: "<span unselectable='on' style='margin-left: 5px'>"
+                + icons[i].getAttribute("name")
+                + "</span>"
+        });
+    }
+    for (var i = 0; i < parts.length; i++) {
+        flagTableRows.push({
+            flag: "<div unselectable='on' class='icon @swcClassName@'></div>"
+                .replace("@swcClassName@", parts[i].getAttribute("swcClassName")),
+            meaning: "<span unselectable='on' style='margin-left: 5px'>"
+                + parts[i].getAttribute("name")
+                + "</span>"
+        });
+    }
+    var modalities = _general.children("ModalityCode").children("modality");
+    for (var i = 0; i < modalities.length; i++) {
+        if( i == modalities.length-1 ){
+            colorTableRows.push({
+                color1: "<div unselectable='on' class='icon' style='background-color: @color@'></div>"
+                    .replace("@color@", ColorUtil.getColor(
+                            modalities[i].getAttribute("colorGroup"), 1)),
+                name1: "<span unselectable='on' style='margin-left: 5px'>"
+                    + modalities[i++].getAttribute("name")
+                    + "</span>",
+                color2: "",
+                name2: ""
+            });
+        } else {
+            colorTableRows.push({
+                color1: "<div unselectable='on' class='icon' style='background-color: @color@'></div>"
+                    .replace("@color@", ColorUtil.getColor(
+                            modalities[i].getAttribute("colorGroup"), 1)),
+                name1: "<span unselectable='on' style='margin-left: 5px'>"
+                    + modalities[i++].getAttribute("name")
+                    + "</span>",
+                color2: "<div unselectable='on' class='icon' style='background-color: @color@'></div>"
+                    .replace("@color@", ColorUtil.getColor(
+                            modalities[i].getAttribute("colorGroup"), 1)),
+                name2: "<span unselectable='on' style='margin-left: 5px'>"
+                    + (i < modalities.length ? modalities[i].getAttribute("name") : "")
+                    + "</span>"
+            });
+        }
+    }
+    _general.modalities = modalities;
+    flagTableRows.fillToLen({}, 14);
+    colorTableRows.fillToLen({}, 14);
+
+    _general.StartDayOfWeek = parseInt(_general.children("StartDayOfWeek")[0].textContent);
+
+    // メッセージ
+    var messages = _general.children("Messages").children();
+    _general.Messages = {};
+    for (var i = 0; i < messages.length; i++) {
+        _general.Messages[messages[i].getAttribute("id")] = {
+            code: messages[i].getAttribute("code"),
+            msg: messages[i].textContent
+        };
+    }
+
+    // Timeline
+    _general.Admission = {
+        backAlpha: _general.children("Admission").attr("backAlpha"),
+        color: _general.children("Admission").attr("color"),
+        thickness: _general.children("Admission").attr("thickness")
+    };
+    _general.TimelineExpandVisibleMode = _general.children("TimelineExpandVisibleMode");
+    if (_general.TimelineExpandVisibleMode.length > 0) {
+        _general.TimelineExpandVisibleMode = _general.TimelineExpandVisibleMode[0]
+            .textContent.replace(/^\s+|\s+$/g, "");
+        if (_general.TimelineExpandVisibleMode != "Visible"
+                && _general.TimelineExpandVisibleMode != "LineOnlyVisible") {
+            _general.TimelineExpandVisibleMode = "Invisible";
+        }
+    } else {
+        _general.TimelineExpandVisibleMode = "Invisible";
+    }
+
+    // Layer
+    var layer = _general.children("Layer");
+    var normalCell = layer.children("NormalCell");
+    var tooltip = normalCell.children("Tooltip");
+    var extraFormat = tooltip.children("extraFormat");
+    _general.extraFormatOfNormalCellTooltip = extraFormat.length == 0
+        ? "(他 {0} 件)" : extraFormat[0].textContent;
+
+    var LayerModelParam = _general.children("LayerModelParam");
+    var getValue = function (name, defValue) {
+        var ret = LayerModelParam.attr(name);
+        if (ret == undefined || ret == "") {
+            ret = defValue;
+        }
+        return parseInt(ret);
+    };
+    _general.LayerModelParam = {
+        defExpCellWidth: getValue("defExpCellWidth", 280),
+        minEmptyCellHeight: getValue("minEmptyCellHeight", 10),
+        defEmptyCellHeight: getValue("defEmptyCellHeight", 40),
+        defEmptyCellWidth: getValue("defEmptyCellWidth", 50),
+        minStdCellHeight: getValue("minStdCellHeight", 35),
+        defStdCellHeight: getValue("defStdCellHeight", 40),
+        defStdCellWidth: getValue("defStdCellWidth", 50),
+        expLineHeight: getValue("expLineHeight", 20),
+        expTitleHeight: getValue("expTitleHeight", 20),
+        expScrollBarHeight: getValue("expScrollBarHeight", 20),
+        minDocNameExpWidth: getValue("docNameColMinWidthAtExpandCell", 185),
+        minDateExpWidth: getValue("dateColMinWidthAtExpandCell", 50),
+        minDepExpWidth: getValue("depColMinWidthAtExpandCell", 80),
+        minStatusExpWidth: getValue("confirmStatusColMinWidthAtExpandCel", 50),
+        tagTimeWidth: getValue("tagTimeWidth", 66),
+        tagUserIdWidth: getValue("tagUserIdWidth", 112),
+        tagUserNameWidth: getValue("tagUserNameWidth", 112),
+        tagDeptWidth: getValue("tagDeptWidth", 48),
+        tagTypeWidth: getValue("tagTypeWidth", 68),
+        tagCommentWidth: getValue("tagCommentWidth", 50),
+        tagOptionTypeWidth: getValue("tagOptionTypeWidth", 65)
+    };
+    var StdCellActionMode = _general.children("StdCellActionMode");
+    _general.StdCellActionMode = {};
+    if (StdCellActionMode == null || StdCellActionMode == undefined
+            || StdCellActionMode.length == 0) {
+         _general.StdCellActionMode["DoubleClick"] = "CompareMode";
+    } else {
+        for (var i = 0; i < StdCellActionMode.length; i++) {
+            var eventType = StdCellActionMode[i].getAttribute("eventType");
+            _general.StdCellActionMode[eventType] = StdCellActionMode[i].textContent;
+        }
+    }
+
+    // TooltipFormat
+    try {
+        var tooltipFormat = _general.children("ToolTipFormat");
+        var subTitle = tooltipFormat.children("subTitle")[0].textContent;
+        var other = tooltipFormat.children("other")[0].textContent;
+        if (subTitle == "") {
+            subTitle = "{0} [{1}]";
+        }
+        if (other == "") {
+            other = "{0}";
+        }
+        _general.ToolTipFormat = {
+            subTitle: subTitle,
+            other: other
+        };
+    } catch (e) {
+        _general.ToolTipFormat = {
+            subTitle: "{0} [{1}]",
+            other: "{0}"
+        };
+    }
+    _general.getDocTooltip = function (doc) {
+        var get = function (attr) {
+            var val;
+            if (doc.getAttribute != undefined) {
+                val = doc.getAttribute(attr);
+            } else {
+                val = doc[attr];
+            }
+            if (val == undefined) {
+                val = "";
+            }
+            return val;
+        };
+        var title = get("title");
+        var subTitle = get("subTitle");
+        if (subTitle == "") {
+            subTitle = get("displayTitle");
+        }
+        if (subTitle != "" && subTitle != title) {
+            return _general.ToolTipFormat.subTitle.replace("{0}", title).replace("{1}", subTitle);
+        } else {
+            return _general.ToolTipFormat.other.replace("{0}", title);
+        }
+    };
+
+    // Palette
+    _general.PaletteMaxItems = parseInt(
+            _general.children("Pallete").children("MaxItems")[0].textContent);
+    var WorkingPalleteStartupMode = _general.children("WorkingPalleteStartupMode");
+    if (WorkingPalleteStartupMode.length > 0) {
+        WorkingPalleteStartupMode = WorkingPalleteStartupMode[0].textContent;
+    }
+    _general.PaletteInitOpen = WorkingPalleteStartupMode === "Open" ? true : false;
+
+    // Property
+    _general.DocumentProperty = _general.children("DocumentProperty").children();
+
+    // URL
+    _general.URLRequestMethod = _general.children("URLRequestMethod")[0].textContent;
+    _general.FOCUS_SINGLE_VIEW = "focus!openSingleView.action";
+    _general.FOCUS_MULTI_VIEW = "focus!openMultiView.action";
+    _general.FOCUS_LIST_VIEW = "focus!openListView.action";
+    _general.PACS_TARGET_VIEW = "pacs.action";
+    _general.BLANK = "_blank";
+    _general.NAVIGATE_LIST = "l";
+    _general.NAVIGATE_MULTI = "m";
+    _general.NAVIGATE_RELATED_CODE_DAY = "day";
+    _general.NAVIGATE_RELATED_CODE_DEPARTMENT = "dept";
+    _general.NAVIGATE_RELATED_CODE_MODALITY = "mod";
+    _general.NAVIGATE_RELATED_CODE_PART = "reg";
+    _general.NAVIGATE_RELATED_CODE_PART_AND_MODALITY = "modreg";
+    _general.NAVIGATE_RELATED_CODE_GROUP = "group";
+    _general.NAVIGATE_RELATED_CODE_LAYER = "layer";
+    _general.NAVIGATE_RELATED_CODE_CELL = "cell";
+    _general.NAVIGATE_RELATED_CODE_PALETTE = "palette";
+    _general.NAVIGATE_RELATED_CODE_ADMISSION = "adm";
+
+    // Form
+    _general.FORM = $("<form id='matrix-general-form'></form>")
+                        .attr("method", _general.URLRequestMethod)
+                        .appendTo("body");
+    _general.FORM.append("<input name='loginuuid' value='" + loginuuid + "' />");
+    _general.FORM.append("<input name='reqpi' value='" + reqpi + "' />");
+    _general.FORM.append("<input name='requuid' value='" + requuid + "' />");
+
+    // ビューア開くのメソッド
+    _general.openFocusView = function (action, target,
+            docId, docIds, relatedCode, targetId, nextId) {
+        _general.FORM.attr("action", action)
+                .attr("target", target);
+        var createInput = function (name, value) {
+            var inputBox = $("<input name='" + name + "' value='" + value + "' />");
+            if (value && value != "") {
+                inputBox.appendTo(_general.FORM);
+            }
+            return inputBox;
+        };
+        var inputs = [];
+        inputs.push(createInput("docId", docId));
+        inputs.push(createInput("docIds", docIds));
+        inputs.push(createInput("relatedCode", relatedCode));
+        inputs.push(createInput("targetId", targetId));
+        inputs.push(createInput("nextId", nextId));
+        _general.FORM[0].submit();
+        for (var i = 0; i < inputs.length; i++) {
+            inputs[i].remove();
+        }
+    };
+}
+
+/**
+ * TextFormatsアクションのハンドラー
+ * @param textFormats XMLオブジェクト
+ */
+function textFormatsHandler(textFormats) {
+    _textFormats = $(textFormats.childNodes[0]);
+    var getText = function (name) {
+        return _textFormats.children("TextFormat[name='" + name + "']").attr("text");
+    };
+
+    // 文書属性ダイアログ
+    _textFormats.propertyCloseButton = getText("propertyCloseButton");
+    _textFormats.propertyValueIfEmpty = getText("propertyValueIfEmpty");
+    _textFormats.propertyValueOfSignInformationIfEmpty = getText("propertyValueOfSignInformationIfEmpty");
+    _textFormats.propertyTagTime = getText("propertyTagTime");
+    _textFormats.propertyTagUserId = getText("propertyTagUserId");
+    _textFormats.propertyTagUserName = getText("propertyTagUserName");
+    _textFormats.propertyTagDept = getText("propertyTagDept");
+    _textFormats.propertyTagType = getText("propertyTagType");
+    _textFormats.propertyTagComment = getText("propertyTagComment");
+    _textFormats.propertyOptionType = getText("propertyOptionType");
+
+    // 部門
+    _textFormats.timelineUserDepartment = getText("timelineUserDepartment");
+    _textFormats.timelineOtherDepartment = getText("timelineOtherDepartment");
+    _textFormats.timelineNonDoctor = getText("timelineNonDoctor");
+    _textFormats.reportTimeline= getText("reportTimeline");
+
+    // Timeline
+    _textFormats.timelineLeftTooltip = getText("timelineLeftTooltip");
+    _textFormats.timelineRightTooltip = getText("timelineRightTooltip");
+    _textFormats.strataLeftTooltip = getText("strataLeftTooltip");
+    _textFormats.strataRightTooltip = getText("strataRightTooltip");
+    _textFormats.LayerMonthUnit = getText("LayerMonthUnit");
+    _textFormats.LayerMakerCountsUnit = getText("LayerMakerCountsUnit");
+
+    // Layer
+    _textFormats.ExpandCellHeaderTitle = getText("ExpandCellHeaderTitle");
+    _textFormats.ExpandCellHeaderDate = getText("ExpandCellHeaderDate");
+    _textFormats.ExpandCellHeaderDepartment = getText("ExpandCellHeaderDepartment");
+    _textFormats.navigateSameTreeCategory = getText("navigateSameTreeCategory");
+    _textFormats.navigateSameCell = getText("navigateSameCell");
+    _textFormats.showProperty = getText("showProperty");
+    _textFormats.navigateSameDay = getText("navigateSameDay");
+    _textFormats.navigateSamePart = getText("navigateSamePart");
+    _textFormats.contractCell = getText("contractCell");
+    
+    _textFormats.ExpandCellHeaderStatus = getText("ExpandCellHeaderStatus");
+    _textFormats.ExpandCellHeaderImportant = getText("ExpandCellHeaderImportant");
+    _textFormats.ExpandCellImporantValue = getText("ExpandCellImporantValue");
+    _textFormats.ExpandCellStatusCode1 = getText("ExpandCellStatusCode1");
+    _textFormats.ExpandCellStatusCode2 = getText("ExpandCellStatusCode2");
+    _textFormats.ExpandCellStatusCode3 = getText("ExpandCellStatusCode3");
+    _textFormats.ExpandCellStatusCode4 = getText("ExpandCellStatusCode4");
+    _textFormats.ExpandCellHeaderTag = getText("ExpandCellHeaderTag");
+
+    // タイムライン上でのコンテキストメニュー
+    var rates = _textFormats.children("TextFormat[name^='rate']");
+    for (var i = 0; i < rates.length; i++) {
+        rangeOptions.push({
+            content: rates[i].getAttribute("text"),
+            value: parseInt(rates[i].getAttribute("name").replace("rate", ""))
+        });
+    }
+
+    // JobPalette
+    _textFormats.PalleteFocusListButtonLabel = getText("PalleteFocusListButtonLabel");
+    _textFormats.PalleteFocusMultiButtonLabel = getText("PalleteFocusMultiButtonLabel");
+    _textFormats.PalleteFocusClearButtonLabel = getText("PalleteFocusClearButtonLabel");
+    _textFormats.PalleteFocusDownloadButtonLabel = getText("PalleteFocusDownloadButtonLabel");
+    _textFormats.PalleteFocusTagViewButtonLabel = getText("PalleteFocusTagViewButtonLabel");
+    _textFormats.PalleteCountsTitle = getText("PalleteCountsTitle");
+    _textFormats.PalleteCountsUnit = getText("PalleteCountsUnit");
+    _textFormats.PaletteCancel = getText("PaletteCancel");
+    
+    // レベル変換
+    _textFormats.LayerYearUnit = getText("LayerYearUnit");
+    _textFormats.LayerMonthUnit = getText("LayerMonthUnit");
+    _textFormats.LayerWait = getText("LayerWait");
+    _textFormats.MiBunrui = getText("MiBunrui");
+    _textFormats.SagyouPalette = getText("SagyouPalette");
+    _textFormats.Kigou = getText("Kigou");
+    _textFormats.Haisyoku = getText("Haisyoku");
+    _textFormats.Imi = getText("Imi");
+    _textFormats.Meisyou = getText("Meisyou");
+    _textFormats.Hanrei = getText("Hanrei");
+    _textFormats.Property = getText("Property");
+    _textFormats.Value = getText("Value");
+}
+
+/**
+ * Patientアクションのハンドラー
+ * @param patient XMLオブジェクト
+ */
+function patientHandler(patient) {
+    _patient = $(patient.childNodes[0]);
+    _patient.id = _patient.attr("patientId");
+    _patient.deathDay = _patient.attr("deathDay");
+    _patient.departmentCode = _patient.children("User").attr("departmentCode");
+    _patient.importantIconVisible = _patient.children("Important").attr("importantIconVisible");
+    _patient.Admissions = [];
+    var admissions = _patient.children("Admissions").children();
+    for (var i = 0; i < admissions.length; i++) {
+        var start = admissions[i].getAttribute("start");
+        var end = admissions[i].getAttribute("end");
+        var admission = {
+            departmentName: admissions[i].getAttribute("departmentName"),
+            departmentCode: admissions[i].getAttribute("departmentCode"),
+            ward: admissions[i].getAttribute("ward"),
+            patientId: admissions[i].getAttribute("patientId")
+        };
+        admission.tooltip = admission.departmentName + " " + start + "~" + end;
+        if (start != "") {
+            start = new Date(start);
+        }
+        if (end != "") {
+            end = new Date(end);
+        }
+        admission.start = start;
+        admission.end = end;
+        _patient.Admissions.push(admission);
+    }
+}
+
+/**
+ * Pairアクションのハンドラー
+ * @param pair XMLオブジェクト
+ */
+function pairDataHandler(pairData) {
+    _pairData = $(pairData.childNodes[0]);
+    _pairData.hasGroupflag = _pairData.attr("hasDepGroupFlag");
+    _pairData.hasTimeSortFlag = _pairData.attr("hasTimeSortFlag");
+    if (_pairData.children("Pair") != null || _pairData.children("Pair") != "" || _pairData.children("Pair") != undefined) {
+        _pairData.mainDepartmentCode = _pairData.children("Pair").attr("mainDepartmentCode");
+        _pairData.subDepartmentCode = _pairData.children("Pair").attr("subDepartmentCode");
+        _pairData.facilitiesCode = _pairData.children("Pair").attr("facilitiesCode");
+    } else {
+        _pairData.mainDepartmentCode = "";
+        _pairData.subDepartmentCode = "";
+        _pairData.facilitiesCode = "";
+    }
+    
+}
+
+/**
+ * Reportアクションのハンドラー
+ * @param reports XMLオブジェクト
+ */
+function reportsHandler(reports) {
+    reports = reports.childNodes[0];
+    _reports = [];
+    _reports.colorGroup = reports.getAttribute("colorGroup");
+    reports = reports.childNodes;
+    for (var i = 0; i < reports.length; i++) {
+        if (!(reports[i] instanceof Element)) {
+            continue;
+        }
+        var codes = reports[i].childNodes;
+        if (codes.length == 0) {
+            continue;
+        }
+        var report = {
+            title: reports[i].getAttribute("title"),
+            colorGroup: parseInt(reports[i].getAttribute("colorGroup")),
+            codes: []
+        };
+        for (var j = 0; j < codes.length; j++) {
+            if (!(codes[j] instanceof Element)) {
+                continue;
+            }
+            report.codes.push(codes[j].textContent);
+        }
+        _reports.push(report);
+    }
+}
+
+/**
+ * DocCodeアクションのハンドラー
+ * @param docCodesList XMLオブジェクト
+ */
+function docCodeHandler(docCodesList) {
+    var docCodes = docCodesList.childNodes[0].childNodes;
+    _docCodes = [], _codesMap = {};
+    for (var i = 0; i < docCodes.length; i++) {
+        if (docCodes[i] instanceof Element) {
+            var code = docCodes[i].getAttribute("code");
+            _codesMap[code] = {};
+            var partsCode = docCodes[i].getAttribute("partsCode");
+            var modalityCode = docCodes[i].getAttribute("modalityCode");
+            var colorGroup = docCodes[i].getAttribute("colorName");
+            if (partsCode != null && partsCode != "") {
+                _codesMap[code].partsCode = partsCode;
+            }
+            if (modalityCode != null && modalityCode != "") {
+                _codesMap[code].modalityCode = modalityCode;
+            }
+            _codesMap[code].colorGroup = colorGroup != null ? colorGroup : "";
+            _docCodes.push(code);
+        }
+    }
+}
+
+/**
+ * TreeCategoryアクションのハンドラー
+ * @param treeCategory XMLオブジェクト
+ */
+function treeCategoryHandler(treeCategory) {
+    _treeCategory = {};
+    var docCodes = treeCategory.childNodes[0].childNodes;
+    for (var i = 0; i < docCodes.length; i++) {
+        if (docCodes[i] instanceof Element) {
+            var code = docCodes[i].getAttribute("code");
+            _treeCategory[code] = [];
+            for (var j = 0; j < docCodes[i].childNodes.length; j++) {
+                var category = docCodes[i].childNodes[j];
+                if (category instanceof Element) {
+                    _treeCategory[code].push({
+                        name: category.getAttribute("name"),
+                        id: category.getAttribute("id")
+                    });
+                }
+            }
+        }
+    }
+    _treeCategory.getCategories = function (code) {
+        if (_treeCategory[code] != undefined) {
+            return _treeCategory[code];
+        } else {
+            return [{
+                name: _textFormats.MiBunrui,
+                id: "Unknown"
+            }];
+        }
+    };
+}
+
+/**
+ * DocumentDataアクションのハンドラー
+ * @param docData XMLオブジェクト
+ */
+function documentDataHandler(docData) {
+    _documents = docData.childNodes[0].childNodes;
+
+    //ダウンロードボタンの表示設定を取得する
+    downloadVisible = parseBool(docData.childNodes[0].getAttribute("downloadVisible"));
+    // 患者IDを取得する
+    patientId = docData.childNodes[0].getAttribute("patientId");
+    // 初期表示期間
+    matrixMaxPeriod = docData.childNodes[0].getAttribute("matrixMaxPeriod");
+    timeLineMaxPeriod = docData.childNodes[0].getAttribute("timeLineMaxPeriod");
+    timeLineAfterMarginPeriod = docData.childNodes[0].getAttribute("timeLineAfterMarginPeriod");
+    timeLineBeforeMarginPeriod = docData.childNodes[0].getAttribute("timeLineBeforeMarginPeriod");
+    if (timeLineMaxPeriod - matrixMaxPeriod < 0){
+        matrixMaxPeriod = timeLineMaxPeriod;
+    }
+    // タイムラインの期間指定操作用
+    _weekFromBeforeHospital = parseInt(docData.childNodes[0].getAttribute("weekFromBeforeHospitalization"));
+    _countEventsBySnapping = parseInt(docData.childNodes[0].getAttribute("countEventsBySnapping"));
+    _jqDocs = $(_documents);
+    var colorGroupUserDept = ColorUtil.getColorGroupOfDept(General.USER_DEPARTMENT);
+    var colorGroupOtherDept = ColorUtil.getColorGroupOfDept(General.OTHER_DEPARTMENT);   
+    if (_documents.length == 0) {
+        firstDocFlag = true;
+        _firstDocDate = new Date();
+        initDates = getRangeDates(getDefaultRate());
+        _general.userDeptVis = true;
+        departmentData.items = [ {
+            height : "20px",
+            deptCode : General.USER_DEPARTMENT,
+            colorGroup : colorGroupUserDept,
+            color : ColorUtil.getColor(colorGroupUserDept, 4),
+            text : _textFormats.timelineUserDepartment
+        }, {
+            height : "20px",
+            deptCode : General.OTHER_DEPARTMENT,
+            colorGroup : colorGroupOtherDept,
+            color : ColorUtil.getColor(colorGroupOtherDept, 4),
+            text : _textFormats.timelineOtherDepartment
+        }, {
+            height : "20px",
+            deptCode : General.REPORT_DEPARTMENT,
+            colorGroup : null,
+            color : ColorUtil.getColor(null, 4),
+            text : _textFormats.reportTimeline
+        } ];
+        return;
+    }
+
+    var index;
+    for (index = 0; !(_documents[index] instanceof Element); index++);
+    _firstDocDate = new Date(_documents[index].getAttribute("eventend"));
+    for (index = _documents.length - 1; !(_documents[index] instanceof Element); index--);
+    _latestDocDate = new Date(_documents[index].getAttribute("eventend"));
+    initDates = getRangeDates(getDefaultRate());
+
+    // department
+    var depNames = [], docs = [];
+    _depCodes = [];
+    for (var i = _documents.length - 1; i >= 0; i--) {
+        if (!(_documents[i] instanceof Element)) {
+            continue;
+        }
+        _documents[i].setAttribute("index", i);
+        docs.push(_documents[i]);
+        _depCodes.pushIfNotContains(_documents[i].getAttribute("departmentCode"));
+        depNames.pushIfNotContains(_documents[i].getAttribute("departmentName"));
+    }
+    _documents = docs.reverse();
+  //  if (_depCodes.contains(_patient.departmentCode)) {
+      if (_patient.departmentCode != null && _patient.departmentCode.length > 0) {
+        _general.userDeptVis = true;
+        departmentData.items = [{
+                height: "20px",
+                deptCode: General.USER_DEPARTMENT,
+                colorGroup: colorGroupUserDept,
+                color: ColorUtil.getColor(colorGroupUserDept, 4),
+                text: _textFormats.timelineUserDepartment
+            }, {
+                height: "20px",
+                deptCode: General.OTHER_DEPARTMENT,
+                colorGroup: colorGroupOtherDept,
+                color: ColorUtil.getColor(colorGroupOtherDept, 4),
+                text: _textFormats.timelineOtherDepartment,
+                children: []
+            }];
+    } else {
+        _general.userDeptVis = false;
+        departmentData.items = [{
+            height: "20px",
+            deptCode: General.OTHER_DEPARTMENT,
+            colorGroup: colorGroupUserDept,
+            color: ColorUtil.getColor(colorGroupUserDept, 4),
+            text: _textFormats.timelineNonDoctor,
+            children: []
+        }];
+    }
+    // 検査レポート
+    var reportsItem = {
+        height: "20px",
+        colorGroup: _reports.colorGroup,
+        color: ColorUtil.getColor(_reports.colorGroup, 4),
+        text: _textFormats.reportTimeline,
+        children: []
+    };
+    for (var i = 0; i < _reports.length; i++) {
+        var hasCodeInDocs = false;
+        for (var j = 0; j < _reports[i].codes.length; j++) {
+            if (_jqDocs.filter("document[code='"
+                    + _reports[i].codes[j] + "']").length > 0) {
+                hasCodeInDocs = true;
+                break;
+            }
+        }
+        if (hasCodeInDocs) {
+            reportsItem.children.push({
+                text: _reports[i].title,
+                colorGroup: _reports[i].colorGroup,
+                color: ColorUtil.getColor(_reports[i].colorGroup, 4)
+            });
+        }
+    }
+    departmentData.items.push(reportsItem);
+    // 自科表示
+  //  if (_depCodes.contains(_patient.departmentCode)) {
+      if (_patient.departmentCode != null && _patient.departmentCode.length> 0) {
+        for (var i = 0; i < depNames.length; i++) {
+            if (_depCodes[i] != _patient.departmentCode) {
+                var colorGroup = ColorUtil.getColorGroupOfDept(_depCodes[i]);
+                departmentData.items[1].children.push({
+                    text: depNames[i],
+                    deptCode: _depCodes[i],
+                    colorGroup: colorGroup,
+                    color: ColorUtil.getColor(colorGroup, 4)
+                });
+            }
+        }
+    } else {
+        for (var i = 0; i < depNames.length; i++) {
+            var colorGroup = ColorUtil.getColorGroupOfDept(_depCodes[i]);
+            departmentData.items[0].children.push({
+                text: depNames[i],
+                deptCode: _depCodes[i],
+                colorGroup: colorGroup,
+                color: ColorUtil.getColor(colorGroup, 4)
+            });
+        }
+    }
+}
+
+/**
+ * Layerアクションのハンドラー
+ * @param layers XMLオブジェクト
+ */
+function layerHandler(layers) {
+    layers = layers.childNodes[0].childNodes;
+    var defDocCodes = [];
+    for (var i = 0; i < layers.length; i++) {
+        var layer = layers[i];
+        if (!(layer instanceof Element)) {
+            continue;
+        }
+        var itemPushed = false;
+        var isOdd = true;
+        var item = {
+            name: layer.getAttribute("name"),
+            text: layer.getAttribute("title"),
+            colorGroup: parseInt(layer.getAttribute("colorGroup")),
+            color: ColorUtil.getColor(
+                        layer.getAttribute("colorGroup"), 4),
+            children: []
+        };
+        for (var j = 0; j < layer.childNodes.length; j++) {
+            var sublayer = layer.childNodes[j];
+            if (!(sublayer instanceof Element)) {
+                continue;
+            }
+            var childPushed = false;
+            var child = {
+                name: sublayer.getAttribute("name"),
+                text: sublayer.getAttribute("title"),
+                colorGroup: parseInt(sublayer.getAttribute("colorGroup")),
+                color: ColorUtil.getColor(
+                            sublayer.getAttribute("colorGroup"),
+                            (isOdd ? 4 - ColorUtil.getDifferentGrayValue() : 4)),
+                docCodes: []
+            };
+            for (var k = 0; k < sublayer.childNodes.length; k++) {
+                if (!(sublayer.childNodes[k] instanceof Element)) {
+                    continue;
+                }
+                var code = sublayer.childNodes[k].textContent;
+                if (_docCodes.contains(code)) {
+                    defDocCodes.push(code);
+                    child.docCodes.push(code);
+                    if (!childPushed) {
+                        isOdd = !isOdd;
+                        item.children.push(child);
+                        childPushed = true;
+                    }
+                    if (!itemPushed) {
+                        docTypeData.items.push(item);
+                        itemPushed = true;
+                    }
+                }
+            }
+        }
+    }
+    if (defDocCodes.length < _docCodes.length) {
+        var unclsified = $(layers).filter("layer[unclassified='true']")[0];
+        var colorGroup = unclsified.getAttribute("colorGroup");
+        var unclsifiedItem = {
+            colorGroup: colorGroup && colorGroup != "" ? parseInt(colorGroup) : 10,
+            color: ColorUtil.getColor(colorGroup, 4),
+            name: unclsified.getAttribute("name"),
+            text: unclsified.getAttribute("title"),
+            docCodes: []
+        };
+        docTypeData.items.push(unclsifiedItem);
+        for (var i = 0; i < _docCodes.length; i++) {
+            if (!(defDocCodes.contains(_docCodes[i]))) {
+                unclsifiedItem.docCodes.push(_docCodes[i]);
+            }
+        }
+    }
+
+    var days = distanceDay(initDates[0], initDates[1]);
+    var boxTotalHeight = window.innerHeight - (days >= 1200 ? 231 : 255);
+    var yearNum = initDates[3].getFullYear() - initDates[2].getFullYear() + 1;
+    if (yearNum >= 6)
+        boxTotalHeight += 24;
+    if (_general.PaletteInitOpen) {
+        boxTotalHeight -= 113;
+    }
+    if (docTypeData.items.length > 0) {
+        for (var i = 0; i < docTypeData.items.length; i++) {
+            docTypeData.items[i].height = (boxTotalHeight - (docTypeData.items.length - 1) * 4)
+                    / docTypeData.items.length;
+        }
+    } else {
+         var tempItem = {
+                    height:boxTotalHeight,
+                    colorGroup: null,
+                    color: ColorUtil.getColor(null, 4),
+                    name: null,
+                    text: null,
+                    docCodes: []
+                };
+        docTypeData.items.push(tempItem);
+    }
+}
+
+/**
+ * Eventアクションのハンドラー
+ * @param events XMLオブジェクト
+ */
+function eventHandler(events) {
+    var codes = events.childNodes[0].childNodes;
+    _eventDocs = [];
+    for (var i = 0; i < codes.length; i++) {
+        if (!(codes[i] instanceof Element)) {
+            continue;
+        }
+        if (_docCodes.contains(codes[i].textContent)) {
+            var docs = _jqDocs.filter("document[code='" + codes[i].textContent + "']");
+            for (var j = 0; j < docs.length; j++) {
+                var doc = docs[j];
+                _eventDocs.push({
+                    dacsid: doc.getAttribute("dacsid"),
+                    code: codes[i].textContent,
+                    title: doc.getAttribute("title"),
+                    subTitle: doc.getAttribute("subTitle"),
+                    displayTitle: doc.getAttribute("displayTitle"),
+                    eventend: doc.getAttribute("eventend"),
+                    eventendTime: doc.getAttribute("eventendTime"),
+                    deptCode: doc.getAttribute("departmentCode"),
+                    index: doc.getAttribute("index"),
+                    imptIcon: codes[i].getAttribute("important"),
+                    subImptIcon: codes[i].getAttribute("subimportant"),
+                    icon: codes[i].getAttribute("swcClassName")
+                });
+            }
+        }
+    }
+}
+
+/**
+ * 文書IDから、文書プロパティーを取得する
+ * @param docId 文書ID
+ * @returns 文書プロパティー
+ */
+function getDocProp(docId, editionNumber) {
+    var prop = getXmlFromUrl(propertyUrl + "?docId=" + docId.replace("_", "%5F") + "&editionNumber=" + editionNumber);
+    prop = $(prop.childNodes[0]);
+    prop.get = function (name) {
+        var children = prop.children(name);
+        if (children.length == 0) {
+            return "";
+        }
+        return children[0].textContent;
+    };
+    return prop;
+}
+
+/**
+ * 文書IDから、文書の「e-文書」プロパティーを取得する
+ * @param docId 文書ID
+ * @returns 文書の「e-文書」プロパティー
+ */
+function getDocVerify(docId, editionNumber) {
+    var verify = getXmlFromUrl(verifyUrl + "?docId=" + docId.replace("_", "%5F") + "&editionNumber=" + editionNumber);
+    verify = $(verify.childNodes[0]);
+    verify.get = function (name) {
+        var children = verify.children(name);
+        if (children.length == 0) {
+            return "";
+        }
+        return children[0].textContent;
+    };
+    return verify;
+}
+
+/**
+ * 文書IDから、文書のTagプロパティーを取得する
+ * @param docId 文書ID
+ * @returns 文書のTagプロパティー
+ */
+function getTagProp(docId, editionNumber) {
+    var props = getXmlFromUrl(tagPropertyUrl + "?docId=" + docId.replace("_", "%5F") + "&editionNumber=" + editionNumber);
+    props = $(props.getElementsByTagName("TagProperty"));
+    return props;
+}
+// Layout
+/**
+ * 「X日表示」のコンボボックス
+ */
+function comboBoxLayout() {
+    window.comboBox = new ComboBox(rangeOptions, rangeOptions[0], false);
+    //comboBox.appendTo("#selector-area");
+    comboBox.appendTo("#comboboxArea");
+    comboBox.onChanged = function (index, item) {
+        dateRangeChanged(item.value);
+    };
+}
+/**
+ * 「表示モード」のコンボボックス
+ */
+function comboBoxTagViewMode() {
+	var tagViewModeInfo = document.getElementById("tagViewModeInfo").value;
+	var tagDisplayFlag = document.getElementById("tagDisplayFlag").value;
+	if (tagDisplayFlag == 'true' && tagViewModeInfo != '') {
+		var selectedIndex=0;
+		var json= eval("("+ tagViewModeInfo+")");
+		$.each(json,function(index,value) {
+	    	tagViewModeOptions.push({
+	            content: value.modeName,
+	            value: value.modeId,
+	            icon: (value.icon == undefined || value.icon == '' || value.icon == null) ? "510_02_16_p24.png" : value.icon
+	        });
+	    	if (value.select == true) {
+	    		selectedIndex = index;
+	    	}
+		});
+		var tagcComboBox = new ComboBox(tagViewModeOptions, tagViewModeOptions[selectedIndex], true);
+		tagcComboBox.appendTo("#comboboxTagViewMode");
+		tagcComboBox.onChanged = function (index, item) {
+			onchangeViewMode(item.value);
+		};
+	}
+}
+
+/**
+ * 凡例ボタン
+ */
+function sampleButtonLayout() {
+    var sampleButton = $("<div unselectable='on'></div>");
+    var disabled = false;
+    var setStyle = function (color, state) {
+        if (!disabled) {
+            this.style.backgroundImage
+                = "url(images/matrix/CommandButton_" + state + ".png)";
+            this.style.color = color;
+        }
+    };
+    sampleButton[0].innerHTML = _textFormats.Hanrei;
+    sampleButton.mouseover(function () {setStyle.call(this, "black", "MouseOver");});
+    sampleButton.mouseout(function () {setStyle.call(this, "black", "Selectable");});
+    sampleButton.mouseup(function () {setStyle.call(this, "black", "Selectable");});
+    sampleButton.mousedown(function () {setStyle.call(this, "white", "Clicked");});
+    sampleButton.click(function () {
+        if (disabled) return;
+        setStyle.call(this, "gray", "Disable");
+        disabled = true;
+        var sampleDialog = loadSampleDialog();
+        sampleDialog.onHide = function () {
+            disabled = false;
+            setStyle.call(sampleButton[0], "black", "Selectable");
+        };
+        sampleDialog.show(true);
+    });
+    setStyle.call(sampleButton[0], "black", "Selectable");
+    //sampleButton.appendTo("#selector-area");
+    sampleButton.appendTo("#sampleBtn");
+    
+}
+
+/**
+ * 部門
+ */
+function departmentBoxLayout() {
+    window.depBox = new AccordionBox(departmentData);
+    depBox.appendTo("#departmentArea");
+    depBox[0].style.marginTop = _general.userDeptVis ? "42px" : "62px";
+    depBox.onExpand = depBoxExpand;
+    depBox.onFold = depBoxFold;
+}
+
+/**
+ * 文書種
+ */
+function docTypeBoxLayout() {
+    window.docTypeBox = new AccordionBox(docTypeData);
+    docTypeBox[0].classList.add("docTypeBox");
+    docTypeBox.setItemBorder("1px solid rgb(183, 186, 188)").setItemMargin("2px");
+    //docTypeBox.appendTo("body");
+    docTypeBox.appendTo("#mid-left");
+    docTypeBox.onExpand = resizeDocTypeBox;
+    docTypeBox.onFold = resizeDocTypeBox;
+    docTypeBox.totalHeight = docTypeBox.height();
+}
+
+/**
+ * タイムラインのプラグイン初期化
+ */
+function initTimeLinePlugin() {
+    timeSelectorLayout();
+    timeStrataLayout();
+}
+
+/**
+ * タイムラインにセレクタ
+ */
+function timeSelectorLayout() {
+    window.jobPalette = new JobPalette(
+            window.innerWidth - 20, patientId,
+            downloadVisible, {
+                textFormats: _textFormats,
+                general: _general,
+                alertMsg: alertMsg,
+                Messages: _general.Messages
+            });
+    window.timeline = new TimelineBase({
+                docTypeData: docTypeData,
+                docTypeBox: docTypeBox,
+                documents: _documents,
+                treeCategory: _treeCategory,
+                general: _general,
+                textFormats: _textFormats,
+                ColorUtil: ColorUtil,
+                alertMsg: alertMsg,
+                ContextMenu: ContextMenu,
+                codesMap: _codesMap,
+                Dialog: Dialog,
+                getDocProp: getDocProp,
+                getDocVerify: getDocVerify,
+                jobPalette: jobPalette,
+                pushDocs: pushDocs,
+                drawLayerDocExistsMark: drawLayerDocExistsMark,
+                patient:_patient,
+                pairData:_pairData
+            });
+    
+    window.timeSelector = timeline.selector(
+            initDates[0], initDates[1], initDates[2], initDates[3]);
+    
+    
+    /*
+    window.timeSelector = timeline.selector(window.innerWidth - 260, 140,
+            initDates[0], initDates[1], initDates[2], initDates[3]);
+    timeSelector.appendTo("#selector-area");
+    timeSelector.children(".timeline-header-body").children(".timeline-btn-l")
+        .attr("title", _textFormats.timelineLeftTooltip);
+    timeSelector.children(".timeline-header-body").children(".timeline-btn-r")
+        .attr("title", _textFormats.timelineRightTooltip);
+    timeSelector.children(".timeline-selector-main")[0].style.backgroundSize = "100% 100%";
+    */
+
+    if (timeSelector.hideMonth) {
+        depBox[0].style.marginTop = _general.userDeptVis ? "18px" : "38px";
+        var paletteMain = jobPalette.children(".jobpalette-body");
+        //suchao del
+        //paletteMain[0].style.top = 329 - window.innerHeight + "px";
+       // if (IEVersion == 11)
+            //suchao del
+            //paletteMain.children(".jobpalette-doc-panel")[0].style.top = 330 - window.innerHeight + "px";
+    } else {
+        depBox[0].style.marginTop = _general.userDeptVis ? "42px" : "62px";
+    }
+    //selectorDrawSVG();
+    
+
+    timeSelector.onTimeRangeChanged = function () {      
+        viewPort.layoutTopDivInner();
+    };
+    timeSelector.onSubRangeChanged = function (start, end) {
+//        var yearNum = end.getFullYear() - start.getFullYear() + 1;
+//        docTypeBox.totalHeight = window.innerHeight - depBox[0].offsetHeight - (jobPalette.getState() ? 305 : 192);
+//        if (timeSelector.hideMonth)
+//            docTypeBox.totalHeight += 24;
+//        if (yearNum >= 6) {
+//            docTypeBox.totalHeight += 24;
+//        }
+//        resizeDocTypeBox();
+      //  selectorDrawSVG();
+        
+//        var strataHeadCount = 2;
+//        var yearNum = end.getFullYear() - start.getFullYear() + 1;
+//        if (yearNum >= 6) {
+//            strataHeadCount = 1;
+//        }
+//        if(viewPort.strataHeadCount != strataHeadCount) {
+//            viewPort.layout(strataHeadCount);
+//        }
+        
+    };
+    
+  //  $("#selector-area").height(timeSelector.dy + 11); 
+    
+    return window.timeSelector;
+}
+
+/**
+ * 地層
+ */
+function timeStrataLayout() {
+    var width = document.getElementById("strata-main").offsetWidth;
+    //window.strata = timeline.strata(window.innerWidth - 260, docTypeBox.height() + 48);
+    window.strata = timeline.strata(width, docTypeBox.height() + 48);
+   // strata.appendTo("body")[0].style.top = - (docTypeBox.height() + 48) + "px";
+    strata.appendTo("#strata-main");
+    strata.children(".timeline-header-body").children(".timeline-btn-l")
+        .attr("title", _textFormats.strataLeftTooltip);
+    strata.children(".timeline-header-body").children(".timeline-btn-r")
+        .attr("title", _textFormats.strataRightTooltip);
+
+    strata.onTimeRangeChanged = function () {
+        if (strata.mode.charAt(0) == "Y")
+            docTypeBox[0].style.marginTop = "34px";
+        else
+            docTypeBox[0].style.marginTop = "58px";
+    };
+}
+
+/**
+ * 作業パレット
+ */
+function jobPaletteLayout() {
+    var dy = 113;
+    //jobPalette.appendTo("body");
+    jobPalette.appendTo("#foot-area");
+    jobPalette.setTitle(_textFormats.SagyouPalette + "(0" + _textFormats.PalleteCountsUnit + ")");
+
+    //contextmenu
+    var docitemContextmenu = new ContextMenu();
+    docitemContextmenu.addItem("Delete", _textFormats.PaletteCancel, "", jobPalette.removeSelectedDocs);
+    docitemContextmenu.on(".jobpalette-doc-panel");
+
+    if (_general.PaletteInitOpen) {
+        jobPalette.state(true);
+        jobPalette.setTitle(_textFormats.SagyouPalette);
+    }
+    jobPalette.onExpand = function () {
+        jobPalette.setTitle(_textFormats.SagyouPalette);
+        viewPort.layout();
+    };
+    jobPalette.onFold = function () {
+        jobPalette.setTitle(_textFormats.SagyouPalette + "(" + jobPalette.docs.length
+                + _textFormats.PalleteCountsUnit + ")");  
+        viewPort.layout();
+    };
+}
+
+/**
+ * ウィンドウサイズ変更時のイベント
+ */
+function setWindowResizeEvent() {
+    var prevWidth = window.innerWidth, prevHeight = window.innerHeight;
+    
+     var mainDiv = document.getElementById("main");
+   // mainDiv.style.height = prevHeight;    
+    //midDiv.style.top =  topDiv.offsetHeight + 20;
+    //lineDiv.style.top =  topDiv.offsetHeight + 20;
+    //midDiv.style.height =  windowHeight - topDiv.offsetHeight - footDiv.offsetHeight;
+    // footDiv.style.top = topDiv.offsetHeight + midDiv.offsetHeight;
+    
+    var fillWithWindowSize = function () {
+        var dx = prevWidth - window.innerWidth;
+        prevWidth = window.innerWidth;
+        mainDiv.style.height = window.innerHeight;  
+       // timeSelector.width(timeSelector.width() - dx);
+       // timeSelector.setVirtualCellRange(timeSelector.subStart, timeSelector.subEnd);
+        strata.width(strata.width() - dx);
+        jobPalette.width(jobPalette.width() - dx);
+
+//        var dy = prevHeight - window.innerHeight;
+//        prevHeight = window.innerHeight;
+//        docTypeBox.totalHeight -= dy;
+//        resizeDocTypeBox();
+
+      //  var paletteMain = jobPalette.children(".jobpalette-body");
+        //suchao del
+        //paletteMain.top(paletteMain.top() + dy);
+      //  var palettePanel = paletteMain.children(".jobpalette-doc-panel");
+      //suchao del
+       // palettePanel.top(palettePanel.top() - dy);
+
+        var header = parent.frames["mrv_header"];
+        if (header.$) {
+            if(header.$(".commonHeader").children("table")[0] == undefined){
+                header.$(".commonHeader1").children("table")[0]
+                .style.width = window.innerWidth - 24 + "px";
+            }else{
+                header.$(".commonHeader").children("table")[0]
+                .style.width = window.innerWidth - 24 + "px";
+            }
+        }
+        if (header.oPopup && header.oPopup.css) {
+            header.oPopup.css("left", header.$("#fontsizeChange")[0].offsetLeft + 425 + "px");
+        }
+        
+        Timeline.Manager.getpreStatus();
+        // tl.layout();
+        tl = Timeline.Manager.paint(Timeline.Manager.curDisplayDates);
+        viewPort.layout();
+    };
+    window.onresize = function () {
+        invokeCtrl.invoke(this, fillWithWindowSize, null, 500);
+    };
+    strata.repaintExistsMark();
+}
+
+/**
+ * 凡例ダイアログをロードする
+ */
+function loadSampleDialog() {
+    var flagTable = new DivTable(
+            [{text: _textFormats.Kigou, name: "flag", width: 45},
+             {text: "<span unselectable='on' style='margin-left: 5px'>" + _textFormats.Imi +"</span>", name: "meaning", width: 132}],
+            flagTableRows);
+    var colorTable = new DivTable(
+            [{text: _textFormats.Haisyoku, name: "color1", width: 45},
+             {text: "<span unselectable='on' style='margin-left: 5px'>"+ _textFormats.Meisyou +"</span>", name: "name1", width: 202},
+             {text: _textFormats.Haisyoku, name: "color2", width: 45},
+             {text: "<span unselectable='on' style='margin-left: 5px'>"+ _textFormats.Meisyou +"</span>", name: "name2", width: 202}],
+             colorTableRows);
+    colorTable[0].style.position = "relative";
+    colorTable[0].style.left = flagTable.width() + 10 + "px";
+    colorTable[0].style.top = "-332px";
+    var contentWidth = flagTable.width() + colorTable.width() + 10;
+    if(colorTableRows.length>14){
+        colorTable[0].style.width="520px";
+        colorTable[0].children[1].style.width="520px";
+        colorTable[0].children[1].style.overflowY="auto";
+        contentWidth = contentWidth + 20;
+    } else {
+        colorTable[0].children[1].style.overflowY="hidden";
+    }
+    if(flagTableRows.length>14){
+        colorTable[0].style.left = flagTable.width() + 30 + "px";
+        flagTable[0].style.width="197px";
+        flagTable[0].children[1].style.width="197px";
+        flagTable[0].children[1].style.overflowY="auto";
+        contentWidth = contentWidth + 20;
+    } else {
+        flagTable[0].children[1].style.overflowY="hidden";
+    }
+    flagTable.setColumnAlign("meaning", "left");
+    colorTable.setColumnAlign("name1", "left");
+    colorTable.setColumnAlign("name2", "left");
+    var content = $("<div unselectable='on'></div>").append(flagTable).append(colorTable);  
+    
+    content[0].style.height = "333px";
+    content[0].style.width = contentWidth + "px";
+
+    var sampleDialog = new Dialog(content, _textFormats.Hanrei, _textFormats.propertyCloseButton);
+    sampleDialog.height("425px");
+    return sampleDialog;
+}
+
+/**
+ * タイムラインのコンテキストメニューをロードする
+ */
+function loadTimelineCtxMenu() {
+    var timelineCtxMenu = new ContextMenu();
+    var option;
+    for (var i = 0; i < rangeOptions.length; i++) {
+        option = rangeOptions[i];
+        timelineCtxMenu.addItem(option.value, option.content, "", dateRangeChanged);
+    }
+    timelineCtxMenu.on("#head-area");
+}
+
+// Actions
+/**
+ * 日数を計算する
+ * @param date1 日付1
+ * @param date2 日付2
+ */
+function distanceDay(date1, date2) {
+    if (date1 - date2 <= 0)
+        return Math.floor((date2 - date1) / (1000 * 60 * 60 * 24));
+    else
+        return - Math.ceil((date1 - date2) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 初期時のセルのrateの値。
+ * 全ての文書（=最古の文書）が、タイムライン上に表示されるように計算される。
+ */
+function getDefaultRate() {
+    var days = distanceDay(_firstDocDate, _today);
+    var laterDays = -distanceDay(_latestDocDate, _today);
+    days = Math.max(1, days);
+    return Math.max(
+        Math.ceil(days / 49),
+        Math.ceil(laterDays / 11));
+}
+
+/**
+ * 日付範囲を取得する
+ * @param rate レート
+ * @returns [開始日, 終了日]
+ */
+function getRangeDates() {
+     /*
+      * datesのデータ構成は以下の通り。
+      * dates[0]:タイムライン左端の日付
+      * dates[1]:タイムライン右端の日付
+      * dates[2]:期間指定枠(青枠)左端の日付
+      * dates[3]:期間指定枠(青枠)右端の日付
+      */
+    var dates = [];  
+    var timeLineMaxYear = parseInt(timeLineMaxPeriod/12);
+    var timeLineMaxMonth = timeLineMaxPeriod % 12;
+    var afterYear = parseInt(timeLineAfterMarginPeriod/12);
+    var afterMonth = timeLineAfterMarginPeriod % 12;
+    var beforeYear = parseInt(timeLineBeforeMarginPeriod/12);
+    var beforeMonth = timeLineBeforeMarginPeriod % 12;
+
+    var matrixMaxYear = parseInt(matrixMaxPeriod/12);
+    var matrixMaxMonth = matrixMaxPeriod % 12;
+
+    var startYear = _today.getFullYear()-timeLineMaxYear-beforeYear;
+    var startMonth = _today.getMonth()-timeLineMaxMonth-beforeMonth;
+    
+    var endYear = _today.getFullYear()+afterYear;
+    var endMonth = _today.getMonth()+afterMonth;
+    var endDay = new Date(endYear,endMonth,0).getDate();
+    if(firstDocFlag){
+        dates.push(newDate(new Date(startYear, startMonth, 1)));
+        dates.push(newDate(new Date(endYear, endMonth, endDay)));
+        dates.push(newDate(new Date(_today.getFullYear()-matrixMaxYear,_today.getMonth()-matrixMaxMonth,_today.getDate())));
+        dates.push(newDate(_today));
+    } else {
+        // 起動日－初診日
+        var diffYear = _today.getFullYear() - new Date(_firstDocDate).getFullYear();
+        var diffMonth = diffYear*12 + (_today.getMonth() - new Date(_firstDocDate).getMonth());
+        if( _today - _firstDocDate < 0){
+            dates.push(newDate(new Date(startYear, startMonth, 1)));
+            dates.push(newDate(new Date(endYear, endMonth, endDay)));
+            dates.push(newDate(new Date(_today.getFullYear()-matrixMaxYear,_today.getMonth()-matrixMaxMonth,_today.getDate())));
+            dates.push(newDate(_today));
+        } else {
+            // 外側のタイムラインの表示範囲
+            if (diffMonth >= timeLineMaxPeriod) {
+                dates.push(newDate(new Date(startYear, startMonth, 1)));
+                dates.push(newDate(new Date(endYear, endMonth, endDay)));
+            } else {
+                startYear = _firstDocDate.getFullYear()-beforeYear;
+                startMonth = _firstDocDate.getMonth()-beforeMonth;
+                dates.push(newDate(new Date(startYear, startMonth, 1)));
+                dates.push(newDate(new Date(endYear, endMonth, endDay)));
+            }
+            // 期間指定枠（青枠）の表示範囲
+            if (diffMonth >= matrixMaxPeriod) {
+                dates.push(newDate(new Date(_today.getFullYear()-matrixMaxYear,_today.getMonth()-matrixMaxMonth,_today.getDate())));
+                dates.push(newDate(_today));
+            } else {
+                dates.push(newDate(_firstDocDate));
+                dates.push(newDate(_today));
+            }
+        }
+    }
+    return dates;
+}
+
+/**
+ * 表示日数変更のイベント
+ * @param value レート
+ */
+function dateRangeChanged(value) {
+    rateChanging = true;
+    var dates = changeRangeDates(value);;
+    if(value == 0) {
+        todayIndex = 49;
+        dates = getRangeDates();
+        //dates = changeRangeDates(getDefaultRate());
+    }
+    
+    Timeline.Manager.getpreStatus();
+    Timeline.Manager.paint(dates);
+    viewPort.layout();
+    
+//    invokeCtrl.invoke(
+//            timeSelector,
+//            timeSelector.setTimeRange,
+//            [dates[0], dates[1]]);
+//       
+    if (comboBox.getCurrentItem().value != value) {
+        var idx = value == 10 ? 7 : (value == 20 ? 8 : value);
+        comboBox.setCurrentItem(rangeOptions[idx]);
+    }
+    invokeCtrl.invoke(this, function () {
+        rateChanging = false;
+    }, []);
+}
+
+/**
+ * 表示モード変更のイベント
+ * @param value レート
+ */
+function onchangeViewMode(modeId) {
+    if (modeId != undefined && modeId != '') {
+    	document.getElementById("tagViewModeNo").value = modeId;
+    	var screenName = "";
+        var url = new String(window.top.location);
+            
+        if (url.indexOf("tree") > -1) {
+        	screenName = "tree";
+        } else if (url.indexOf("matrix") > -1) {
+        	screenName = "matrix";
+        } else if(url.indexOf("navigate") > -1) {
+        	screenName = "navigate";
+        }
+        document.getElementById("screenName").value = screenName;
+        frmTagViewMode.submit();
+    }
+}
+
+
+/**
+ * 表示日変更した時、TimeLine範囲を取得する
+ * @param rate レート
+ * @returns [開始日, 終了日]
+ */
+function changeRangeDates(rate) {
+    var dates = [];    
+    
+    dates.push(new Date(_today.getFullYear(), _today.getMonth(),
+            _today.getDate() - rate * (todayIndex + 1)));
+    dates.push(new Date(_today.getFullYear(), _today.getMonth(),
+            _today.getDate() + rate * (59 - todayIndex)));
+    var temp = new Date(_latestDocDate);
+    temp.setDate(_latestDocDate.getDate() - rate * 12);
+    dates.push(temp);
+    dates.push(_latestDocDate);    
+    var days = distanceDay(dates[0], dates[2]);
+    if (days < 0) {
+        dates[2].setDate(dates[2].getDate() - days);
+        dates[3].setDate(dates[3].getDate() - days);
+    }
+    days = distanceDay(dates[1], dates[3]);
+    if (days > 0) {
+        dates[2].setDate(dates[2].getDate() - days);
+        dates[3].setDate(dates[3].getDate() - days);
+    }
+    return dates;
+}
+
+/**
+ * 文書種ボックスサイズ変更
+ * @param foldAll 地層セル全フォールド
+ */
+function resizeDocTypeBox(foldAll) {
+    if (foldAll == undefined) foldAll = true;
+    computeDocTypeBox();
+    // Strata Resize
+    strata.height(docTypeBox.height() + 48);
+    strata.repaintColumns(foldAll);
+}
+/**
+ * 文書種ボックスサイズ計算
+ */
+function computeDocTypeBox() {
+    var expand = normal = child = 0;
+    var uHeight;
+    for (var i = 0; i < docTypeData.items.length; i++) {
+        var item = docTypeData.items[i];
+        if (item.expand) {
+            expand++;
+            child += item.children.length;
+        } else {
+            normal++;
+        }
+    }
+    uHeight = (docTypeBox.totalHeight - (expand + normal + child - 1) * 4)
+                / (expand + 2 * normal + 3 * child);
+    for (var i = 0; i < docTypeData.items.length; i++) {
+        var item = docTypeData.items[i];
+        if (item.expand) {
+            item.height = uHeight;
+            for (var j = 0; j < item.children.length; j++) {
+                item.children[j].height = 3 * uHeight;
+            }
+        } else {
+            item.height = 2 * uHeight;
+        }
+    }
+    docTypeBox.setData(docTypeData);
+}
+/**
+ * 部門ボックス展開のイベント
+ * @param item 展開のアイテム
+ */
+function depBoxExpand(item) {
+    tl.getBandWithName("bodyBand")._eventPainter.toggleEvent();
+    viewPort.layout();
+}
+
+/**
+ * 部門ボックス折り畳むのイベント
+ * @param item 折り畳むのアイテム
+ */
+function depBoxFold(item) {
+    tl.getBandWithName("bodyBand")._eventPainter.toggleEvent();
+    viewPort.layout();
+;
+}
+
+/** 重要性情報 */
+var imptInfoTable;
+/**
+ * セレクトにSVGをペイントする
+ */
+function selectorDrawSVG() {
+    timeSelector.clearSVG();
+    timeSelector.beginDraw();
+    imptInfoTable = {};
+    var baseLineY = _general.userDeptVis ? 41 : 61;
+    if (timeSelector.hideMonth)
+        baseLineY -= 24;
+    // 入院期間枠
+    drawHsptlztnFrames(baseLineY);
+    // 重要度アイコン、文書アイコン、リポートアイコン
+    drawTimelineIcons(baseLineY);
+    timeSelector.endDraw();
+}
+
+/**
+ * 入院期間情報をコピーする
+ * @param 元情報
+ * @returns 新の入院期間情報
+ */
+function newAdmission(src) {
+    return {
+        start: src.start != "" ? new Date(src.start) : "",
+        end: src.end != "" ? new Date(src.end) : "",
+        departmentName: src.departmentName,
+        departmentCode: src.departmentCode,
+        ward: src.ward,
+        tooltip: src.tooltip,
+        patientId: src.patientId
+    };
+}
+
+/**
+ * 重複日付を取得する
+ * @param tSpan1 タイムスパン1
+ * @param tSpan2 タイムスパン2
+ * @returns 重複日付
+ */
+function getOverlap(tSpan1, tSpan2) {
+    if (tSpan1.start > tSpan2.end
+            || tSpan2.start > tSpan1.end) {
+        return null;
+    }
+
+    var overlap = {type: "overlap"};
+    var setSt = function (tSpan) {
+        var x = timeSelector.getXOfDate(tSpan.start);
+        x -= x % timeSelector.cellWidth;
+        tSpan.start = timeSelector.getDateOfX(x);
+        if (tSpan.start < timeSelector.start) {
+            tSpan.start = timeSelector.start;
+        }
+        overlap.start = tSpan.start;
+        overlap.left = x;
+        tSpan.left = x;
+    };
+    var setEd = function (tSpan) {
+        var x;
+        if (tSpan.end === "") {
+            x = timeSelector.dx;
+        } else {
+            x = timeSelector.getXOfDate(tSpan.end);
+        }
+        x += timeSelector.cellWidth - x % timeSelector.cellWidth;
+        tSpan.end = timeSelector.getDateOfX(x);
+        if (tSpan.end > timeSelector.end) {
+            tSpan.end = timeSelector.end;
+        }
+        tSpan.end.setDate(tSpan.end.getDate() + 1);
+        overlap.end = tSpan.end;
+        overlap.right = x;
+        tSpan.right = x;
+    };
+
+    if (tSpan1.start > tSpan2.start) {
+        setSt(tSpan1);
+        overlap.tooltip = tSpan2.tooltip + "<br/>" + tSpan1.tooltip;
+        overlap.departmentCode = tSpan2.departmentCode;
+        if (tSpan1.end < tSpan2.end) {
+            setEd(tSpan1);
+            tSpan1.fullOver = true;
+        } else {
+            setEd(tSpan2);
+            tSpan1.start = overlap.end;
+            tSpan2.end = overlap.start;
+            tSpan1.left = overlap.right;
+            tSpan2.right = overlap.right;
+        }
+    } else {
+        setSt(tSpan2);
+        overlap.tooltip = tSpan1.tooltip + "<br/>" + tSpan2.tooltip;
+        overlap.departmentCode = tSpan1.departmentCode;
+        if (tSpan1.end < tSpan2.end) {
+            setEd(tSpan1);
+            tSpan1.end = overlap.start;
+            tSpan2.start = overlap.end;
+            tSpan1.right = overlap.right;
+            tSpan2.left = overlap.right;
+        } else {
+            setEd(tSpan2);
+            tSpan2.fullOver = true;
+        }
+    }
+    return overlap;
+}
+
+/**
+ * 入院期間枠
+ * @param baseLineY ベースライン
+ */
+function drawHsptlztnFrames(baseLineY) {
+    var admissions = [];
+    // 入院期間と重複の日付を取得する
+    for (var i = 0; i < _patient.Admissions.length; i++) {
+        var admission = newAdmission(_patient.Admissions[i]);
+        if (admission.start >= timeSelector.end
+                || admission.end !="" && admission.end <= timeSelector.start) {
+            continue;
+        }
+        var overlaps = [];
+        for (var j = 0; j < admissions.length; j++) {
+            if (admissions[j].start >= timeSelector.end
+                    || admissions[j].end <= timeSelector.start) {
+                continue;
+            }
+            var overlap = getOverlap(admission, admissions[j]);
+            if (overlap != null) {
+                overlaps.push(overlap);
+            }
+        }
+        admissions = admissions.concat(overlaps);
+        admissions.push(admission);
+    }
+    // 入院期間と重複の日付をペイントする
+    for (var i = 0; i < admissions.length; i++) {
+        var admission = admissions[i];
+        if (admission.fullOver === true) {
+            continue;
+        }
+        var RECT = {
+                y: baseLineY - 10,
+                height: timeSelector.dy - 39 - baseLineY
+        };
+        if (admission.left != undefined) {
+            RECT.x = admission.left;
+        } else {
+            RECT.x = timeSelector.getXOfDate(admission.start);
+        }
+        if (RECT.x < 0) {
+            RECT.x = 0;
+        } else if (RECT.x > timeSelector.dx) {
+            continue;
+        }
+        var rectRight;
+        if (admission.right != undefined) {
+            rectRight = admission.right;
+        } else {
+            rectRight = admission.end != ""
+                                ? timeSelector.getXOfDate(admission.end)
+                                : timeSelector.dx + 1;
+        }
+        if (rectRight > timeSelector.dx + 1) {
+            rectRight = timeSelector.dx + 1;
+        }
+        RECT.width = rectRight - RECT.x;
+        var colorGroup = ColorUtil.getColorGroupOfDept(admission.departmentCode);
+        if (admission.type == "overlap") {
+            if (RECT.x % timeSelector.cellWidth != 0) {
+                RECT.x += timeSelector.cellWidth - RECT.x % timeSelector.cellWidth;
+            }
+            // 重複日付
+            timeSelector.drawOverlap(
+                RECT,
+                ColorUtil.getColor(colorGroup, 2),
+                ColorUtil.getColor(colorGroup, 0),
+                ColorUtil.getColor(colorGroup, 5),
+                admission.tooltip);
+        } else {
+            // 入院期間日付
+            timeSelector.drawHsptlztn(
+                RECT,
+                admission.departmentName,
+                ColorUtil.getColor(colorGroup, 2),
+                ColorUtil.getColor(colorGroup, 0),
+                _general.Admission.backAlpha,
+                admission.tooltip);
+        }
+    }
+}
+
+/**
+ * タイムラインに、アイコンをペイントする
+ * @param baseLineY ベースライン
+ */
+function drawTimelineIcons(baseLineY) {
+    var i = 0, y;
+    for (var j = 0; j < departmentData.items.length; j++) {
+        var item = departmentData.items[j];
+        var outerDocsInfo = {
+            lCount: 0,
+            rCount: 0,
+            lDate: _firstDocDate,
+            rDate: _latestDocDate
+        };
+        /**
+         * 範囲外文書のハンドラー
+         * @param outerDoc 範囲外文書
+         */
+        var handler = function (outerDoc) {
+            var eventend = new Date(outerDoc.eventend
+                    ? outerDoc.eventend : outerDoc.getAttribute("eventend"));
+            if (eventend <= timeSelector.start) {
+                outerDocsInfo.lCount++;
+                if (eventend > outerDocsInfo.lDate) {
+                    outerDocsInfo.lDate = eventend;
+                }
+            } else {
+                outerDocsInfo.rCount++;
+                if (eventend < outerDocsInfo.rDate) {
+                    outerDocsInfo.rDate = eventend;
+                }
+            }
+        };
+        y = baseLineY + i++ * 20;
+        if (!item.expand || _general.TimelineExpandVisibleMode == "Visible") {
+            // 部門ライン
+            timeSelector.drawLine(y - 1, ColorUtil.getColor(item.colorGroup, 1));
+            if (item.deptCode) {
+                // 文書アイコン
+                drawDeptIcons(y, item.deptCode, handler);
+            } else {
+                // レポート文書アイコン
+                drawReportIcons(y, null, handler);
+            }
+        } else  {
+            if (_general.TimelineExpandVisibleMode == "LineOnlyVisible") {
+                // 部門ライン
+                timeSelector.drawLine(y - 1, ColorUtil.getColor(item.colorGroup, 1));
+            }
+            if (item.deptCode) {
+                // 文書アイコン
+                drawDeptIcons(y, item.deptCode, handler, true);
+            } else {
+                // レポート文書アイコン
+                drawReportIcons(y, null, handler, true);
+            }
+        }
+        if (outerDocsInfo.lCount + outerDocsInfo.rCount > 0) {
+            // 文書存在マーク
+            drawSelectorDocExistsMark(y, item.colorGroup, outerDocsInfo);
+        }
+
+        // アイテム展開の場合
+        if (item.expand) {
+            for (var k = 0; k < item.children.length; k++) {
+                var child = item.children[k];
+                var outerDocsInfo = {
+                    lCount: 0,
+                    rCount: 0,
+                    lDate: _firstDocDate,
+                    rDate: _latestDocDate
+                };
+                /**
+                 * 範囲外文書のハンドラー
+                 * @param outerDoc 範囲外文書
+                 */
+                var handler = function (outerDoc) {
+                    var eventend = new Date(outerDoc.eventend
+                            ? outerDoc.eventend : outerDoc.getAttribute("eventend"));
+                    if (eventend <= timeSelector.start) {
+                        outerDocsInfo.lCount++;
+                        if (eventend > outerDocsInfo.lDate) {
+                            outerDocsInfo.lDate = eventend;
+                        }
+                    } else {
+                        outerDocsInfo.rCount++;
+                        if (eventend < outerDocsInfo.rDate) {
+                            outerDocsInfo.rDate = eventend;
+                        }
+                    }
+                };
+                y = baseLineY + i++ * 20;
+                // 部門ライン
+                timeSelector.drawLine(y - 1, ColorUtil.getColor(child.colorGroup, 1));
+                if (child.deptCode) {
+                    // 文書アイコン
+                    drawDeptIcons(y, child.deptCode, handler);
+                } else {
+                    // レポート文書アイコン
+                    drawReportIcons(y, child, handler);
+                }
+                if (outerDocsInfo.lCount + outerDocsInfo.rCount > 0) {
+                    // 文書存在マーク
+                    drawSelectorDocExistsMark(y, child.colorGroup, outerDocsInfo);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 文書アイコンをペイント
+ * @param y アイコンの縦座標
+ * @param deptCode 部門コード
+ * @param outerDocsHandler 範囲外文書のハンドラー
+ * @param onlyCount カウントのみ
+ */
+function drawDeptIcons(y, deptCode, outerDocsHandler, onlyCount) {
+    var deptTable = {};
+    /**
+     * 部門コードをチェック
+     * @param code 部門コード
+     */
+    var checkCode = function (code) {
+        if (deptCode === General.USER_DEPARTMENT) {
+            return code === _patient.departmentCode;
+        } else if (deptCode === General.OTHER_DEPARTMENT) {
+            return code != _patient.departmentCode;
+        } else {
+            return code === deptCode;
+        }
+    };
+    /**
+     * 文書のイベント日付を取得する
+     * @param doc 文書
+     */
+    var getDocDate = function (doc) {
+        return new Date(doc.eventend);
+    };
+    for (var i = 0; i < _eventDocs.length; i++) {
+        if (checkCode(_eventDocs[i].deptCode)) {
+            var cellIdx = timeSelector.getCellIndex(new Date(_eventDocs[i].eventend));
+            if (cellIdx == -1) {
+                outerDocsHandler(_eventDocs[i]);
+                continue;
+            }
+            if (deptTable[cellIdx] == undefined) {
+                deptTable[cellIdx] = {};
+            }
+            if (imptInfoTable[cellIdx] == undefined) {
+                imptInfoTable[cellIdx] = {};
+                imptInfoTable[cellIdx].docs = [];
+            }
+            if (imptInfoTable[cellIdx].eventTime == undefined
+                    || imptInfoTable[cellIdx].eventTime > getDocDate(_eventDocs[i])
+                    || imptInfoTable[cellIdx].index > _eventDocs[i].index) {
+                if (_eventDocs[i].imptIcon != undefined && _eventDocs[i].imptIcon != "") {
+                    imptInfoTable[cellIdx].text = _eventDocs[i].displayTitle;
+                    imptInfoTable[cellIdx].tooltip = _general.getDocTooltip(_eventDocs[i]);
+                    imptInfoTable[cellIdx].imptIcon = _eventDocs[i].imptIcon;
+                    imptInfoTable[cellIdx].eventTime = getDocDate(_eventDocs[i]);
+                    imptInfoTable[cellIdx].index = _eventDocs[i].index;
+                }
+            }
+            imptInfoTable[cellIdx].docs.push(_eventDocs[i]);
+            if (deptTable[cellIdx].icon == undefined) {
+                deptTable[cellIdx].icon = _eventDocs[i].icon;
+                deptTable[cellIdx].deptCode = _eventDocs[i].deptCode;
+                deptTable[cellIdx].docs = [_eventDocs[i]];
+                deptTable[cellIdx].eventTime = getDocDate(_eventDocs[i]);
+                deptTable[cellIdx].index = _eventDocs[i].index;
+            } else if (deptTable[cellIdx].eventTime - getDocDate(_eventDocs[i]) > 0
+                    || deptTable[cellIdx].index > _eventDocs[i].index) {
+                deptTable[cellIdx].icon = "Multi-" + _eventDocs[i].icon;
+                deptTable[cellIdx].docs.push(_eventDocs[i]);
+                deptTable[cellIdx].deptCode = _eventDocs[i].deptCode;
+                deptTable[cellIdx].eventTime = getDocDate(_eventDocs[i]);
+                deptTable[cellIdx].index = _eventDocs[i].index;
+            } else {
+                deptTable[cellIdx].docs.push(_eventDocs[i]);
+                // 複数重要性文書の場合
+                if (deptTable[cellIdx].icon.indexOf("Multi-") != 0) {
+                    deptTable[cellIdx].icon = "Multi-" + deptTable[cellIdx].icon;
+                }
+            }
+        }
+    }
+    for (var cellIdx in imptInfoTable) {
+        var x = cellIdx * timeSelector.cellWidth + timeSelector.cellWidth / 2;
+        if (x < 0 || x > timeSelector.dx) {
+            continue;
+        }
+        // 重要性ラベルとアイコンをペイントする
+        drawImportantLabel(x, imptInfoTable[cellIdx].text);
+        drawImportantIcon(x, imptInfoTable[cellIdx].imptIcon,
+                imptInfoTable[cellIdx].tooltip, imptInfoTable[cellIdx].docs);
+    }
+
+    if (onlyCount !== true) {
+        for (var cellIdx in deptTable) {
+            var x = cellIdx * timeSelector.cellWidth + timeSelector.cellWidth / 2;
+            if (x < 0 || x > timeSelector.dx) {
+                continue;
+            }
+            // 文書アイコンをペイントする
+            drawDocIcon(x, y, deptTable[cellIdx].icon,
+                    deptTable[cellIdx].deptCode, deptTable[cellIdx].docs);
+        }
+    }
+}
+
+/**
+ * 重要性ラベルをペイントする
+ * @param x 横座標
+ * @param text 文字列
+ */
+function drawImportantLabel(x, text) {
+    if (text == undefined || text == "") return;
+    var baseLineY = timeSelector.hideMonth ? -13 : 11;
+    if (text.length > 7) {
+        var displayText = text.substring(0, 6) + "...";
+        timeSelector.drawText(x, baseLineY, displayText, "red", text);
+    } else {
+        timeSelector.drawText(x, baseLineY, text, "red");
+    }
+}
+
+/**
+ * 重要性アイコンをペイントする
+ * @param x 横座標
+ * @param icon アイコン
+ * @param tooltip ツールチープ
+ * @param docs 文書
+ */
+function drawImportantIcon(x, icon, tooltip, docs) {
+    if (icon == undefined || icon == "") return;
+    var baseLineY = timeSelector.hideMonth ? -3 : 21;
+    icon = imgRoot + "022/" + icon + ".png";
+    timeSelector.drawImage(x, baseLineY, icon, tooltip, function () {
+        showOnStrata(docs);
+    });
+}
+
+/**
+ * 文書アイコン
+ * @param x 横座標
+ * @param y 縦座標
+ * @param icon アイコン
+ * @param deptCode 部門コード
+ * @param docs 文書
+ */
+function drawDocIcon(x, y, icon, deptCode, docs) {
+    if (icon == undefined || icon == "") return;
+    var img = (function () {
+        var ret = imgRoot;
+        var multi = false;
+        if (icon.indexOf("Multi-") == 0) {
+            multi = true;
+            icon = icon.substring(6);
+        }
+        switch (icon) {
+            case "FirstTimeIcon":
+                ret += multi ? "007start/007_" : "006start/006_";
+                break;
+            case "TimelineIcon":
+                ret += multi ? "009pause/009_" : "008pause/008_";
+                break;
+            case "OperationTimelineIcon":
+                ret += multi ? "011stop/011_" : "010stop/010_";
+                break;
+        }
+        return ret + ColorUtil.picCrGroup[ColorUtil.getColorGroupOfDept(deptCode)];
+    })();
+    var tooltip = docs.length + _textFormats.LayerMakerCountsUnit;
+    timeSelector.drawImage(x, y, img, tooltip, function () {
+        showOnStrata(docs);
+    });
+}
+
+/**
+ * @param modalityCode モダリティコード
+ * @return 色グループ
+ */
+function getModalityColor(modalityCode) {
+    var modality = _general.modalities.filter("*[code='" + modalityCode + "']");
+    if (modality.length) {
+        var crGroup = modality.attr("colorGroup");
+        return crGroup != "" ? parseInt(crGroup) : 10;
+    } else {
+        return 10;
+    }
+}
+
+/**
+ * レポートアイコンをペイントする
+ * @param y 縦座標
+ * @param item アイテム
+ * @param outerDocsHandler 範囲外文書のハンドラー
+ * @param onlyCount カウントのみ
+ */
+function drawReportIcons(y, item, outerDocsHandler, onlyCount) {
+    var reptTable = {};
+    var getDocDate = function (doc) {
+        return new Date(doc.getAttribute("eventend"));
+    };
+    // レポート情報を取得
+    for (var i = 0; i < _reports.length; i++) {
+        var report = _reports[i];
+        if (item == undefined || item.text == report.title) {
+            for (var j = 0; j < report.codes.length; j++) {
+                var code = report.codes[j];
+                var docs = _jqDocs.filter("document[code='" + code + "']");
+                for (var k = 0; k < docs.length; k++) {
+                    var cellIdx = timeSelector.getCellIndex(
+                            new Date(docs[k].getAttribute("eventend")));
+                    if (cellIdx == -1) {
+                        outerDocsHandler(docs[k]);
+                        continue;
+                    }
+                    if (reptTable[cellIdx] == undefined) {
+                        reptTable[cellIdx] = {};
+                    }
+                    if (reptTable[cellIdx].icon == undefined) {
+                        reptTable[cellIdx].icon = _codesMap[code].partsCode
+                                                    ? _codesMap[code].partsCode : "";
+                        reptTable[cellIdx].colorGroup = _codesMap[code].colorGroup != ""
+                                                            ? parseInt(_codesMap[code].colorGroup)
+                                                            : getModalityColor(_codesMap[code].modalityCode);
+                        reptTable[cellIdx].docs = [docs[k]];
+                        reptTable[cellIdx].eventTime = getDocDate(docs[k]);
+                        reptTable[cellIdx].index = docs[k].index;
+                    } else if (reptTable[cellIdx].eventTime - getDocDate(docs[k]) > 0
+                            || reptTable[cellIdx].index > docs[k].index) {
+                        reptTable[cellIdx].icon = "Multi-"
+                            + (_codesMap[code].partsCode ? _codesMap[code].partsCode : "");
+                        reptTable[cellIdx].docs.push(docs[k]);
+                        reptTable[cellIdx].colorGroup = _codesMap[code].colorGroup != ""
+                                                        ? parseInt(_codesMap[code].colorGroup)
+                                                        : getModalityColor(_codesMap[code].modalityCode);
+                        reptTable[cellIdx].eventTime = getDocDate(docs[k]);
+                        reptTable[cellIdx].index = docs[k].index;
+                    } else {
+                        reptTable[cellIdx].docs.push(docs[k]);
+                        if (reptTable[cellIdx].icon.indexOf("Multi-") != 0) {
+                            reptTable[cellIdx].icon = "Multi-" + reptTable[cellIdx].icon;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (onlyCount !== true) {
+        // レポートアイコンをペイント
+        for (var cellIdx in reptTable) {
+            var x = cellIdx * timeSelector.cellWidth + timeSelector.cellWidth / 2;
+            if (x < 0 || x > timeSelector.dx) {
+                continue;
+            }
+            var img = (function () {
+                var single = true;
+                var ret = imgRoot;
+                if (reptTable[cellIdx].icon.indexOf("Multi-") == 0) {
+                    single = false;
+                    reptTable[cellIdx].icon = reptTable[cellIdx].icon.substring(6);
+                }
+                switch (reptTable[cellIdx].icon) {
+                    case "BM0001":
+                        ret += single ? "012/012_" : "013/013_";
+                        break;
+                    case "BM0002":
+                        ret += single ? "014/014_" : "015/015_";
+                        break;
+                    case "BM0003":
+                        ret += single ? "016/016_" : "017/017_";
+                        break;
+                    case "BM0004":
+                        ret += single ? "018/018_" : "019/019_";
+                        break;
+                    default:
+                        ret += single ? "020/020_" : "021/021_";
+                }
+                return ret + ColorUtil.picCrGroup[reptTable[cellIdx].colorGroup];
+            })();
+            timeSelector.drawImage(x, y, img,
+                    reptTable[cellIdx].docs.length + _textFormats.LayerMakerCountsUnit,
+                    (function (docs) {
+                        return function () {
+                            showOnStrata(docs);
+                        };
+                    })(reptTable[cellIdx].docs));
+        }
+    }
+}
+
+/**
+ * 文書存在マークをペイントする
+ * @param y 縦座標
+ * @param colorGroup 色グループ
+ * @param outerDocsInfo 範囲外文書情報
+ * @param lClick 左マークのクリックイベント
+ * @param rClick 右マークのクリックイベント
+ * @param forStrata 地層にマーク
+ */
+function drawDocExistsMark(y, colorGroup, outerDocsInfo, lClick, rClick, forStrata) {
+    if (!colorGroup) {
+        colorGroup = 10;
+    }
+    var drawFunc = forStrata ? "drawImageForStrata" : "drawImage";
+    if (outerDocsInfo.lCount > 0) {
+        var img = "images/matrix/036/036_" + ColorUtil.picCrGroup[colorGroup];
+      //  timeSelector[drawFunc](-10, y, img,
+      //          outerDocsInfo.lCount + _textFormats.LayerMakerCountsUnit, lClick);
+    }
+    if (outerDocsInfo.rCount > 0) {
+        var img = "images/matrix/035/035_" + ColorUtil.picCrGroup[colorGroup];
+     //   timeSelector[drawFunc](timeSelector.dx + 10, y, img,
+     //           outerDocsInfo.rCount + _textFormats.LayerMakerCountsUnit, rClick);
+    }
+}
+
+/**
+ * セレクトに文書存在マークをペイントする
+ * @param y 縦座標
+ * @param colorGroup 色グループ
+ * @param outerDocsInfo 範囲外文書情報
+ */
+function drawSelectorDocExistsMark(y, colorGroup, outerDocsInfo) {
+    var selectorRange = timeSelector.end - timeSelector.start;
+    drawDocExistsMark(y, colorGroup, outerDocsInfo,
+                function () {
+                    var endDate = new Date(outerDocsInfo.lDate);
+                    endDate.setMilliseconds(endDate.getMilliseconds() + selectorRange);
+                    invokeCtrl.invoke(
+                            timeSelector,
+                            timeSelector.setTimeRange,
+                            [outerDocsInfo.lDate, endDate]);
+                },
+                function () {
+                    outerDocsInfo.rDate.setDate(outerDocsInfo.rDate.getDate() - (IEVersion == 11 ? 0 : 1));
+                    var startDate = new Date(outerDocsInfo.rDate);
+                    startDate.setMilliseconds(startDate.getMilliseconds() - selectorRange);
+                    invokeCtrl.invoke(
+                            timeSelector,
+                            timeSelector.setTimeRange,
+                            [startDate, outerDocsInfo.rDate]);
+                });
+}
+
+/**
+ * 地層に文書存在マークをペイントする
+ * @param cateDocs 分類文書
+ * @param realRange 列の日付範囲
+ */
+function drawLayerDocExistsMark(cateDocs, realRange) {
+    var strata = this;
+    var strataRange = strata.end - strata.start;
+    
+    var strataDecorator = new Timeline.StrataDecorator(tl);
+    /**
+     * 範囲外文書の情報を取得する
+     * @param layerDocs 地層に全文書
+     */
+    var getOuterDocsInfo = function (layerDocs) {
+        var lInfo = {
+            lCount: 0,
+            lDate: _firstDocDate,
+        };
+        var rInfo = {
+            rCount: 0,
+            rDate: _latestDocDate
+        };
+        for (var i = 0; i < layerDocs.length; i++) {
+            var eventend = new Date(layerDocs[i].eventend);
+            if (eventend < realRange[0]) {
+                lInfo.lCount++;
+                if (eventend > lInfo.lDate) {
+                    lInfo.lDate = eventend;
+                }
+            } else if (eventend > realRange[1]) {
+                rInfo.rCount++;
+                if (eventend < rInfo.rDate) {
+                    rInfo.rDate = eventend;
+                }
+            }
+        }
+        return [lInfo, rInfo];
+    };
+    /**
+     * 文書存在マークのクリックイベントを取得する
+     * @param info 範囲外文書情報
+     * @param flag l: 左; r: 右
+     */
+    var getClickFuncByInfo = function (info, flag) {
+        if (flag == "l") {
+            return function () {
+                var end = new Date(info.lDate);
+                end.setMilliseconds(end.getMilliseconds() + strataRange);
+                invokeCtrl.invoke(
+                        strata,
+                        strata.setTimeRange,
+                        [info.lDate, end]);
+                timeSelector.setVirtualRange(info.lDate, end);
+            };
+        } else if (flag == "r") {
+            return function () {
+                var start = new Date(info.rDate);
+                start.setMilliseconds(start.getMilliseconds() - strataRange);
+                invokeCtrl.invoke(
+                        strata,
+                        strata.setTimeRange,
+                        [start, info.rDate]);
+                timeSelector.setVirtualRange(start, info.rDate);
+            };
+        }
+    };
+    // 地層の文書存在マークをクリア
+   // timeSelector.clearSVGForStrata();
+    var itemIdx = 0;
+    var cols = strata.children(".timeline-strata-main").children(".timeline-strata-column");
+    var firstColItems = cols.first().children();
+    var lastColItems = cols.last().children();
+    var baseOffset = depBox.height() + 88 ;
+    if(firstColItems[0]!=null){
+        baseOffset = baseOffset - firstColItems[0].offsetTop;
+    } 
+    if (strata.mode.charAt(0) == "Y")
+        baseOffset -= 24;
+ //   if (timeSelector.hideMonth)
+ //       baseOffset -= 20;
+    // 全層
+    for (var i = 0; i < docTypeData.items.length; i++) {
+        var item = docTypeData.items[i];
+        var layerDocs = [];
+        //var ly = baseOffset + firstColItems[itemIdx].offsetTop + firstColItems[itemIdx].offsetHeight / 2;
+        //var ry = baseOffset + lastColItems[itemIdx].offsetTop + lastColItems[itemIdx].offsetHeight / 2;
+        var ly = firstColItems[itemIdx].offsetTop + firstColItems[itemIdx].offsetHeight / 2;
+        var ry = lastColItems[itemIdx].offsetTop + lastColItems[itemIdx].offsetHeight / 2;
+        itemIdx++;
+        for (var cateId in cateDocs[item.name]) {
+            layerDocs = layerDocs.concat(cateDocs[item.name][cateId]);
+        }
+        var infos = getOuterDocsInfo(layerDocs);
+//        drawDocExistsMark(ly, item.colorGroup, infos[0],
+//                getClickFuncByInfo(infos[0], "l"),
+//                null, true);
+        strataDecorator.drawDocExistsMark(ly, item.colorGroup, infos[0],
+                getClickFuncByInfo(infos[0], "l"),
+                null, true);
+//        drawDocExistsMark(ry, item.colorGroup, infos[1],
+//                null,
+//                getClickFuncByInfo(infos[1], "r"), true);
+        strataDecorator.drawDocExistsMark(ry, item.colorGroup, infos[1],
+                null,
+                getClickFuncByInfo(infos[1], "r"), true);
+        // サブ層
+        for (var j = 0; item.expand && j < item.children.length; j++) {
+            var child = item.children[j];
+           // var ly = baseOffset + firstColItems[itemIdx].offsetTop + firstColItems[itemIdx].offsetHeight / 2;
+           // var ry = baseOffset + lastColItems[itemIdx].offsetTop + lastColItems[itemIdx].offsetHeight / 2;
+            var ly = firstColItems[itemIdx].offsetTop + firstColItems[itemIdx].offsetHeight / 2;
+            var ry = lastColItems[itemIdx].offsetTop + lastColItems[itemIdx].offsetHeight / 2;
+            itemIdx++;
+            var sublayerDocs = [];
+            for (var cateId in cateDocs[child.name]) {
+                sublayerDocs = sublayerDocs.concat(cateDocs[child.name][cateId]);
+            }
+            var subinfos = getOuterDocsInfo(sublayerDocs);
+//            drawDocExistsMark(ly, child.colorGroup, subinfos[0],
+//                    getClickFuncByInfo(subinfos[0], "l"),
+//                    null, true);
+            strataDecorator.drawDocExistsMark(ly, child.colorGroup, subinfos[0],
+                    getClickFuncByInfo(subinfos[0], "l"),
+                    null, true);
+//            drawDocExistsMark(ry, child.colorGroup, subinfos[1],
+//                    null,
+//                    getClickFuncByInfo(subinfos[1], "r"), true);
+            strataDecorator.drawDocExistsMark(ry, child.colorGroup, subinfos[1],
+                    null,
+                    getClickFuncByInfo(subinfos[1], "r"), true);
+        }
+    }
+}
+
+/**
+ * 地層に文書表示する
+ * @param docs 文書
+ */
+function showOnStrata(docs) {
+    /**
+     * 文書属性値を取得する
+     * @param doc 文書
+     * @oaram attr 属性名
+     */
+    var get = function (doc, attr) {
+        if (doc[attr] != undefined) {
+            return doc[attr];
+        } else {
+            return doc.getAttribute(attr);
+        }
+    };
+    var firstDate = _latestDocDate, lastDate = _firstDocDate;
+    var ids = [];
+    for (var i = 0; i < docs.length; i++) {
+        var eventend = new Date(get(docs[i], "eventend"));
+        if (eventend < firstDate) {
+            firstDate = eventend;
+        }
+        if (eventend > lastDate) {
+            lastDate = eventend;
+        }
+        ids.push(get(docs[i], "dacsid"));
+    }
+    // 選択の文書IDを設定する
+    strata.setSelectIds(ids);
+    if (!(firstDate >= strata.start && lastDate < strata.end)) {
+        if (strata.end - strata.start > lastDate - firstDate) {
+            var end = new Date(firstDate);
+            end.setMilliseconds(end.getMilliseconds() + (strata.end - strata.start));
+            invokeCtrl.invoke(
+                    strata,
+                    strata.setTimeRange,
+                    [firstDate, end]);
+            timeSelector.setVirtualCellRange(firstDate, end);
+        } else {
+            invokeCtrl.invoke(
+                    strata,
+                    strata.setTimeRange,
+                    [firstDate, lastDate]);
+            timeSelector.setVirtualCellRange(firstDate, lastDate);
+        }
+    } else {
+        strata.repaintColumns();
+    }
+    invokeCtrl.invoke(
+            this,
+            function () {
+                while (invokeCtrl.storage.length > 0) {
+                    var storageFn = invokeCtrl.storage.pop();
+                    storageFn();
+                }
+            }, [], 200);
+}
+
+/**
+ * 作業パレットに文書を追加する
+ * @param docs 文書
+ * @param colorGroup 色グループ
+ */
+function pushDocs(docs, colorGroup) {
+    if (jobPalette.docs.length + docs.length > _general.PaletteMaxItems) {
+        alertMsg(_general.Messages.tooMuchDocumentOnPalette);
+        return;
+    }
+    for (var i = 0; i < docs.length; i++) {
+        var doc = docs[i];
+        var mergePatientId = docs[i].patientId;
+        var icon = "";
+        if (patientId == mergePatientId){
+            icon = "url(images/matrix/075/075_" + ColorUtil.picCrGroup[colorGroup] + ")";
+        } else {
+            icon = "url(images/matrix/075/500_" + ColorUtil.picCrGroup[colorGroup] + ")";
+        }
+        jobPalette.pushDoc({
+            icon: icon,
+            dacsid: doc.dacsid,
+            title: doc.title,
+            displayTitle: doc.displayTitle,
+            eventend: doc.eventend,
+            dept: doc.deptName,
+            hasPermissionFlag: doc.hasPermissionFlag,
+            hasDLPermissionFlag: doc.hasDLPermissionFlag,
+            delReqFlag: parseBool(doc.delReqFlag),
+            patientId: mergePatientId,
+            tag: doc.tag,
+            tagTitle: doc.tagTitle
+        });
+    }
+}
+
+// Prototype
+/**
+ * アレイにアイテム存在チェック
+ * @param item 目標アイテム
+ * @param propName 属性名
+ */
+Array.prototype.contains = function (item, propName) {
+    for (var i = 0; i < this.length; i++) {
+        if (propName && this[i][propName] == item) {
+            return true;
+        } else if (this[i] == item) {
+            return true;
+        }
+    }
+    return false;
+};
+/**
+ * アレイにアイテム存在しないの場合、アイテムを追加する
+ * @param item 目標アイテム
+ */
+Array.prototype.pushIfNotContains = function (item) {
+    if (!this.contains(item)) {
+        this.push(item);
+    }
+};
+/**
+ * アレイにアイテム充填する
+ * @param item アイテム
+ * @param len 長さ
+ */
+Array.prototype.fillToLen = function (item, len) {
+    while (this.length < len) {
+        this.push(item);
+    }
+};
+
+/**
+ * 色管理クラス
+ */
+var ColorUtil = {
+    differentGrayValue: Number.MIN_VALUE,
+    colors: [
+        "",
+        "#FE9100",
+        "#FEC571",
+        "#FFD79B",
+        "#FFE2B8",
+        "#FEEFD8", //5
+        "#CC803B",
+        "#F0AD66",
+        "#F3C694",
+        "#F7D6B2",
+        "#FCE7D1", //10
+        "#5EBF11",
+        "#A7CF8B",
+        "#BEDCA9",
+        "#D3E7C4",
+        "#E2F0D9", //15
+        "#05D6CB",
+        "#85D7D6",
+        "#A6C4E1",
+        "#C2EBEA",
+        "#D8E3F1", //20
+        "#00AEF2",
+        "#7EBFE6",
+        "#A8D3EE",
+        "#BEDFF2",
+        "#D9ECF9", //25
+        "#7A42D3",
+        "#A998CC",
+        "#BBA9D6",
+        "#D4C9E5",
+        "#E1DAED", //30
+        "#C445AC",
+        "#C37CB5",
+        "#D5A2CA",
+        "#E1BDDA",
+        "#E9CFE3", //35
+        "#ED0A97",
+        "#F093C7",
+        "#F2A8D2",
+        "#F7C9E3",
+        "#FADCED", //40
+        "#DBB200",
+        "#FCE074",
+        "#FDEA9B",
+        "#FEEFB6",
+        "#E1F09B", //45
+        "#8E8E8E",
+        "#BDBDBB",
+        "#DADAD8",
+        "#E6E6E3",
+        "#E6E6E3"
+    ],
+
+    picCrGroup: [
+            "",
+            "01o2.png",
+            "02o.png",
+            "03g.png",
+            "04e.png",
+            "05s.png",
+            "06pur.png",
+            "07v.png",
+            "08p.png",
+            "09y.png",
+            "10b.png"
+    ],
+
+    /**
+     * プロセスカラーの色指定を取得する。
+     *
+     * @param group 色グループ（1～10）
+     * @param gray 濃淡値（1～4）
+     * @return 色の16進法文字列
+     */
+    getColor: function (group, gray) {
+        if (group == undefined || group === "") group = "10";
+        group = parseInt(group) % 10;
+        if (group == 0) {
+            group = 10;
+        }
+        return ColorUtil.colors[((group - 1) * 5 + (gray + 1))];
+    },
+
+    /**
+     * サブ地層を、色の濃淡値を変えて、まだら模様に表示する際の濃淡値の差分を取得する。
+     * 濃淡値は、プロセスカラーの濃淡値を意味する。
+     */
+    getDifferentGrayValue: function () {
+        if (ColorUtil.differentGrayValue == Number.MIN_VALUE) {
+            var dapple = _general.children("Layer").children("DappleColor");
+            if (dapple.length == 0) {
+                ColorUtil.differentGrayValue = 0;
+            } else {
+                var val = dapple[0].getAttribute("differentGrayValue");
+                if (val === "") {
+                    ColorUtil.differentGrayValue = 0;
+                } else {
+                    ColorUtil.differentGrayValue = parseInt(val);
+                }
+            }
+        }
+        return ColorUtil.differentGrayValue;
+    },
+
+    /**
+     * 部門コードから、色グループを取得する
+     * @param departmentCode 部門コード
+     * @returns 色グループ
+     */
+    getColorGroupOfDept: function (departmentCode) {
+        if (departmentCode == _patient.departmentCode
+                || departmentCode == General.USER_DEPARTMENT) {
+            return 1;
+        }
+        if (departmentCode == General.OTHER_DEPARTMENT) {
+            return 2;
+        }
+        if (departmentCode.length == 0) {
+            return 10;
+        } else {
+            if (_depCodes == null || _depCodes == undefined || !_depCodes.contains(departmentCode)) {
+                return 10;
+            }
+            /**
+             * 部門コードから、インデックスを取得する
+             * @param code 部門コード
+             * @return インデックス
+             */
+            var deptIndex = function (code) {
+                for (var index = 0; index < _depCodes.length; index++) {
+                    if (code == _depCodes[index]) {
+                        return index;
+                    }
+                }
+                return -1;
+            };
+            var index = deptIndex(departmentCode);
+            if (index == -1) {
+                return 10;
+            }
+            var userDeptIndex = deptIndex(_patient.departmentCode);
+            if (index > userDeptIndex) {
+                return (index - 1) % 7 + 3;
+            } else {
+                return (index) % 7 + 3;
+            }
+        }
+    },
+
+    /**
+     * 色グループをパースする
+     * @param str 文字列
+     * @returns 色グループ
+     */
+    parseColorGroup: function (str) {
+        try {
+            var group = parseInt(str);
+            if (group < 11 && group > 0) {
+                return group;
+            }
+            return 10;
+        } catch (ex) {
+            return 10;
+        }
+    }
+};
+
+var General = {
+    USER_DEPARTMENT: "timelineUserDepartment",
+    OTHER_DEPARTMENT: "timelineOtherDepartment",
+    UNKNOWN_DEPARTMENT: "unknownDepartment",
+    REPORT_DEPARTMENT:"reportTimeline"
+};
+
+var Messages = {
+    "MRV-1001": {
+        code: "MRV-1001",
+        msg: $("#msg1001").val()
+    },
+    "MRV-1002": {
+        code: "MRV-1002",
+        msg: $("#msg1002").val()
+    },
+    "MRV-1003": {
+        code: "MRV-1003",
+        msg: $("#msg1003").val()
+    }
+};
+
+
+
+/**
+ * 地層表示期間枠
+ * @param className クラス名
+ */
+
+var TransparentBox = function (className) {
+    if (!(this instanceof TransparentBox)) return;
+
+    var topDiv = $("<div unselectable='on'>")[0];
+    var bottomDiv = $("<div unselectable='on'>")[0];
+    var leftDiv = $("<div unselectable='on'>")[0];
+    var rightDiv = $("<div unselectable='on'>")[0];
+    var left = 0, top = 0, width = 8, height = 8;
+
+    topDiv.classList.add(className);
+    topDiv.style.height = "4px";
+
+    bottomDiv.classList.add(className);
+    bottomDiv.style.height = "4px";
+
+    leftDiv.classList.add(className);
+    leftDiv.style.width = "4px";
+    leftDiv.style.borderTopLeftRadius = "3px";
+    leftDiv.style.borderBottomLeftRadius = "3px";
+
+    rightDiv.classList.add(className);
+    rightDiv.style.width = "4px";
+    rightDiv.style.borderTopRightRadius = "3px";
+    rightDiv.style.borderBottomRightRadius = "3px";
+
+    box = $([topDiv, bottomDiv, leftDiv, rightDiv]);
+
+    box.left = function (val) {
+        if (val != undefined) {
+            left = val;
+            init();
+            return box;
+        } else {
+            return left;
+        }
+    };
+    box.top = function (val) {
+        if (val != undefined) {
+            top = val;
+            init();
+            return box;
+        } else {
+            return top;
+        }
+    };
+    box.width = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            width = val;
+            init();
+            return box;
+        } else {
+            return width;
+        }
+    };
+    box.height = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            height = val;
+            init();
+            return box;
+        } else {
+            return height;
+        }
+    };
+    box.right = function () {
+        return left + width;
+    };
+    box.bottom = function () {
+        return top + height;
+    };
+    box.offsetLeft = function () {
+        return leftDiv.offsetLeft;
+    };
+    box.hideLeft = function () {
+        leftDiv.style.display = "none";
+    };
+    box.showLeft = function () {
+        leftDiv.style.display = "inline";
+    };
+    box.hideRight = function () {
+        rightDiv.style.display = "none";
+    };
+    box.showRight = function () {
+        rightDiv.style.display = "inline";
+    };
+
+    function init() {
+        var offsetLeft = 0;
+        var offsetTop = 0;
+
+        leftDiv.style.left = left + offsetLeft;
+        leftDiv.style.top = top + offsetTop;
+        leftDiv.style.height = height;
+
+        rightDiv.style.left = left + width - 4 + offsetLeft;
+        rightDiv.style.top = top + offsetTop;
+        rightDiv.style.height = height;
+
+        topDiv.style.left = left + 4 + offsetLeft;
+        topDiv.style.top = top + offsetTop;
+        topDiv.style.width = width - 8;
+
+        bottomDiv.style.left = left + 4 + offsetLeft;
+        bottomDiv.style.top = top + height - 4 + offsetTop;
+        bottomDiv.style.width = width - 8;
+    }
+
+    init();
+    return box;
+}; 
+
+/**
+ * 時、分、秒情報が無しの日付を取得する
+ * @param paras コンストラクタパラメーター
+ * @returns 日付オブジェクト
+ */
+function newDate(paras) {
+    var ret;
+    if (paras) {
+        ret = new Date(paras);
+    } else {
+        ret = new Date();
+    }
+    return new Date(ret.getFullYear()
+            + "/" + (ret.getMonth() + 1)
+            + "/" + ret.getDate());
+};
+
+function getLocation() {
+    var url;
+    var contextName="";
+    var work;
+    var wi=0;
+    var count=0;
+    work = window.location.pathname.split("/");
+
+    for (wi=0; wi < work.length; wi++) {
+        if (work[wi] != '') {
+            if (work[wi].indexOf('action') > -1) {
+                break;
+            } else if (work[wi].indexOf('pages') > -1) {
+                break;
+            }
+        }
+    }
+
+    for (count=0; count < wi; count++) {
+        if (work[count] != '') {
+            contextName += "/" + work[count];
+        }
+    }
+
+    url = window.location.protocol + "//"
+        + window.location.host
+        + contextName;
+
+    return url;
+}
+
+function openEditDialog(sid) {
+	var url = getLocation()
+    + "/pages/mrv_prop_edit.jsp";
+    window.showModalDialog(url, window, "dialogWidth:280px;dialogHeight:210px;");
+}
+
+
+/**
+ * 地層ハイライト表示期間枠
+ * @param className クラス名
+ */
+
+var StrataHighlightsTransparentBox = function (className) {
+    if (!(this instanceof StrataHighlightsTransparentBox)) return;
+
+    var topDiv = $("<div unselectable='on'>")[0];
+    var bottomDiv = $("<div unselectable='on'>")[0];
+    var leftDiv = $("<div unselectable='on'>")[0];
+    var rightDiv = $("<div unselectable='on'>")[0];
+    var left = 0, top = 0, width = 8, height = 8;
+
+    topDiv.classList.add(className);
+    topDiv.style.height = "6px";
+
+    bottomDiv.classList.add(className);
+    bottomDiv.style.height = "6px";
+
+    leftDiv.classList.add(className);
+    leftDiv.style.width = "6px";
+    leftDiv.style.borderTopLeftRadius = "5px";
+    leftDiv.style.borderBottomLeftRadius = "5px";
+
+    rightDiv.classList.add(className);
+    rightDiv.style.width = "6px";
+    rightDiv.style.borderTopRightRadius = "5px";
+    rightDiv.style.borderBottomRightRadius = "5px";
+
+    var box = $([topDiv, bottomDiv, leftDiv, rightDiv]);
+
+    box.left = function (val) {
+        if (val != undefined) {
+            left = val;
+            init();
+            return box;
+        } else {
+            return left;
+        }
+    };
+    box.top = function (val) {
+        if (val != undefined) {
+            top = val;
+            init();
+            return box;
+        } else {
+            return top;
+        }
+    };
+    box.width = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            width = val;
+            init();
+            return box;
+        } else {
+            return width;
+        }
+    };
+    box.height = function (val) {
+        if (val != undefined) {
+            if (val < 8) val = 8;
+            height = val;
+            init();
+            return box;
+        } else {
+            return height;
+        }
+    };
+    box.right = function () {
+        return left + width;
+    };
+    box.bottom = function () {
+        return top + height;
+    };
+    box.offsetLeft = function () {
+        return leftDiv.offsetLeft;
+    };
+    box.hideLeft = function () {
+        leftDiv.style.display = "none";
+    };
+    box.showLeft = function () {
+        leftDiv.style.display = "inline";
+    };
+    box.hideRight = function () {
+        rightDiv.style.display = "none";
+    };
+    box.showRight = function () {
+        rightDiv.style.display = "inline";
+    };
+
+    function init() {
+        var offsetLeft = 0;
+        var offsetTop = 0;
+
+        leftDiv.style.left = left + offsetLeft;
+        leftDiv.style.top = top + offsetTop;
+        leftDiv.style.height = height;
+
+        rightDiv.style.left = left + width - 6 + offsetLeft;
+        rightDiv.style.top = top + offsetTop;
+        rightDiv.style.height = height;
+
+        topDiv.style.left = left + 6 + offsetLeft;
+        topDiv.style.top = top + offsetTop;
+        topDiv.style.width = width - 12;
+
+        bottomDiv.style.left = left + 6 + offsetLeft;
+        bottomDiv.style.top = top + height - 6 + offsetTop;
+        bottomDiv.style.width = width - 12;
+    }
+
+    init();
+    return box;
+}; 
+
+var nofindIcon = (function() {
+	var img=event.srcElement;
+	img.src="images/tag/510_02_16_p24.png";
+	img.onerror=null; 
+});
