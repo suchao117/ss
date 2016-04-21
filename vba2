@@ -1,0 +1,650 @@
+'--------frame---------------
+Dim bolFA1 As Boolean
+Dim bolFA4 As Boolean
+Dim bolSucess As Boolean
+Dim bolFA8 As Boolean
+Dim bolFAE As Boolean
+Dim bolFA3 As Boolean
+Dim bolFA5 As Boolean
+Dim bolFA6 As Boolean
+Dim bol195F As Boolean
+Dim bolIpwk As Boolean
+Dim bolSlf As Boolean
+Dim bolMtas As Boolean
+
+'worksheet?
+Dim lngColStartPos         As Long
+Dim lngColEndPos           As Long
+
+
+Dim culActiveSheet As Variant
+Dim arrSQL_TPL(1 To 10)
+ 
+Dim sheetCount As Integer
+Dim tplWorkBook As Variant
+
+
+Private Sub cmdClose_Click()
+    Unload Me
+End Sub
+
+Private Sub cmdGetTitle_Click()
+    Dim curCell     As Variant
+    Dim strRt As String
+    Dim strPath As String
+    Dim lngFree As Long
+    Dim itCase As Variant
+    strRt = ""
+    Set itCase = Application.ActiveWorkbook
+    
+    getFrameValue
+    itCase.Activate
+    
+    '-------------------------
+    For sheetCount = 1 To Worksheets.Count
+            Set culActiveSheet = Worksheets(sheetCount)
+            strRt = strRt + createRsltFromErrCd
+            
+            lngFree = FreeFile
+            strPath = SQL_OUT_PATH + "result.csv"
+            If strRt <> "" Then
+                Open strPath For Output As #lngFree
+                    Print #lngFree, Mid(strRt, 1, Len(strRt) - 2)
+                Close #lngFree
+            End If
+    Next sheetCount
+    
+    MsgBox "寢壥偑嶌惉偟傑偟偨丅", vbOKOnly + vbInformation
+End Sub
+
+Public Function createRsltFromErrCd()
+    lngColStartPos = seqCodeStartColumn
+    lngColEndPos = seqCodeEndColumn
+    Dim errorKbn As String
+    Dim strRt As String
+    Dim lpa As Long
+    Dim findObj As Variant
+    Dim rowFind As Long
+    Dim rowCount As Long
+      
+    Set findObj = culActiveSheet.Columns("A").Find("妋擣崁栚", LookIn:=xlValues)
+    If Not findObj Is Nothing Then
+        rowFind = findObj.Row
+        rowCount = findObj.MergeArea.Rows.Count - 1
+    End If
+    For lpa = lngColStartPos To lngColEndPos
+        errorKbn = ErrorKbn_FUN(lpa)
+        If (bolSucess Or bolFA8 Or bolFAE Or bolFA3 Or bolFA5 Or bolFA6 Or bol195F Or bolFA1 Or bolFA4) Then
+           If (bolSucess And errorKbn = "0") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA8 And errorKbn = "FA8") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFAE And errorKbn = "FAE") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA3 And errorKbn = "FA3") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA5 And errorKbn = "FA5") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA6 And errorKbn = "FA6") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bol195F And errorKbn = "195F") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA1 And errorKbn = "FA1") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            ElseIf (bolFA4 And errorKbn = "FA4") Then
+                strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+            End If
+        Else
+            strRt = strRt + createResult(rowFind, (rowFind + rowCount), lpa) + vbCrLf
+        End If
+    Next lpa
+    
+'    lngFree = FreeFile
+'    strPath = SQL_OUT_PATH + "result.csv"
+'    If strRt <> "" Then
+'        Open strPath For Output As #lngFree
+'            Print #lngFree, Mid(strRt, 1, Len(strRt) - 2)
+'        Close #lngFree
+'    End If
+    createRsltFromErrCd = strRt
+End Function
+
+Public Function createResult(resultStartRow As Long, resultEndRow As Long, colPos As Long)
+        Dim i
+        Dim strOne
+        Dim curCell     As Variant
+        strOne = ""
+        For i = resultStartRow To resultEndRow
+            Set curCell = culActiveSheet.Cells(i, colPos)
+            If (curCell.Value = "仜") Then
+                strOne = strOne + "1"
+            Else
+                strOne = strOne + "0"
+            End If
+        Next i
+        
+        For i = 4 To 6
+            Set curCell = culActiveSheet.Cells(i, colPos)
+            If (curCell.Value = "仜") Then
+                strOne = strOne + "1"
+            Else
+                strOne = strOne + "0"
+            End If
+        Next i
+        
+        createResult = RQST_ID_FUN(colPos) + "," + strOne
+End Function
+Private Sub CommandButton1_Click()
+
+    Dim lpa                    As Long
+    Dim itCase As Variant
+    Set itCase = Application.ActiveWorkbook
+    Dim errorKbn As String
+    Dim sheetName As String
+    Dim p As Integer
+    Dim sheetNm As String
+    
+    getFrameValue
+    
+
+    getSQLTplList
+    
+    '-------------------------
+    For sheetCount = 1 To itCase.Worksheets.Count
+    
+        Set culActiveSheet = itCase.Worksheets(sheetCount)
+        
+        tplWorkBook.Activate
+        
+        Dim i As Long
+        For i = 1 To 5
+            If arrSQL_TPL(i) <> "" Then
+                IsSheetExist (arrSQL_TPL(i) + "_temp")
+            End If
+        Next
+        
+        lngColStartPos = seqCodeStartColumn
+        lngColEndPos = seqCodeEndColumn
+        For lpa = lngColStartPos To lngColEndPos
+            errorKbn = ErrorKbn_FUN(lpa)
+            For i = 1 To 10
+                If arrSQL_TPL(i) <> "" Then
+                    Dim tplName As String
+                    tplName = arrSQL_TPL(i)
+                
+                    If (bolFA1 Or bolSucess Or bolFA8 Or bolFAE Or bolFA3 Or bolFA4 Or bolFA5 Or bolFA6 Or bol195F) Then
+                        If (bolFA1 And errorKbn = "FA1") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolSucess And errorKbn = "0") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFA8 And errorKbn = "FA8") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFAE And errorKbn = "FAE") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFA3 And errorKbn = "FA3") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFA4 And errorKbn = "FA4") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFA5 And errorKbn = "FA5") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bolFA6 And errorKbn = "FA6") Then
+                            Call gentateSQL(tplName, lpa)
+                        ElseIf (bol195F And errorKbn = "195F") Then
+                            Call gentateSQL(tplName, lpa)
+                        End If
+                    Else
+                        Call gentateSQL(tplName, lpa)
+                    End If
+                
+                End If
+            Next
+        Next lpa
+    
+        writeSQl
+    
+        itCase.Activate
+    Next
+End Sub
+
+Public Sub writeSQl()
+    Dim lngColStartPos         As Long
+    Dim lngColEndPos           As Long
+    Dim lpa                    As Long
+    Dim errorKbn As String
+    
+    Dim strRt As String
+    strRt = ""
+
+    lngColStartPos = seqCodeStartColumn
+    lngColEndPos = seqCodeEndColumn
+
+    For lpa = lngColStartPos To lngColEndPos
+        errorKbn = ErrorKbn_FUN(lpa)
+        If (bolSucess Or bolFA8 Or bolFAE Or bolFA3 Or bolFA5 Or bolFA6 Or bol1653) Then
+           If (bolSucess And errorKbn = "0") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bolFA8 And errorKbn = "FA8") Then
+               strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bolFAE And errorKbn = "FAE") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bolFA3 And errorKbn = "FA3") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bolFA5 And errorKbn = "FA5") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bolFA6 And errorKbn = "FA6") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+           ElseIf (bol1653 And errorKbn = "195F") Then
+              strRt = strRt + writeSQL2(lpa) + vbCrLf
+          End If
+        Else
+           strRt = strRt + writeSQL2(lpa) + vbCrLf
+        End If
+    Next lpa
+    
+    Dim strPath As String
+    Dim lngFree As Long
+    
+    lngFree = FreeFile
+    strPath = SQL_OUT_DETIL_PATH + ComDataKbn.Text & sheetCount - 1 & "allInOne.sql"
+    
+    If strRt = "" Then
+        Exit Sub
+    End If
+    
+    If Dir(strPath) <> "" Then
+        Exit Sub
+    End If
+    
+    Open strPath For Output As #lngFree
+        Print #lngFree, Mid(strRt, 1, Len(strRt) - 2)
+    Close #lngFree
+End Sub
+
+Public Function writeSQL2(colPos As Long)
+    Dim strOnePath As String
+    Dim lngOneFree As Long
+    Dim lngInsertSqlPos As Long
+    Dim strOne As String
+    Dim tplName As String
+    strOnePath = SQL_OUT_PATH + tplWorkBook.Worksheets("DTB_RQST_TPL_temp").Cells(colPos, 2).Value + ".sql"
+    
+    If Dir(strOnePath) <> "" Then
+        Exit Function
+    End If
+    strOne = ""
+    Dim i As Long
+   
+    For i = 1 To UBound(arrSQL_TPL)
+        tplName = arrSQL_TPL(i)
+        If arrSQL_TPL(i) <> "" Then
+            lngInsertSqlPos = tplWorkBook.Worksheets(tplName).Rows(3).Find("SQL_INSERT", , , xlWhole).Column
+            strOne = strOne + tplWorkBook.Worksheets(tplName + "_temp").Cells(colPos, lngInsertSqlPos + 1).Value + vbCrLf
+        End If
+    Next
+    For i = 1 To UBound(arrSQL_TPL)
+        tplName = arrSQL_TPL(i)
+        If arrSQL_TPL(i) <> "" Then
+            lngInsertSqlPos = tplWorkBook.Worksheets(tplName).Rows(3).Find("SQL_INSERT", , , xlWhole).Column
+            Dim SRVC_STAT As String
+            SRVC_STAT = SRVC_STAT_FUN(colPos)
+            If isDeviceTpl(tplName) And SRVC_STAT = 3 Then
+                
+            Else
+                strOne = strOne + tplWorkBook.Worksheets(tplName + "_temp").Cells(colPos, lngInsertSqlPos).Value + vbCrLf
+            End If
+        End If
+    Next
+    
+    lngOneFree = FreeFile
+    Open strOnePath For Output As #lngOneFree
+        Print #lngOneFree, Mid(strOne, 1, Len(strOne) - 2)
+    Close #lngOneFree
+    
+    writeSQL2 = strOne
+End Function
+
+
+Public Function gentateSQL(tplName As String, colPos As Long)
+    Dim lngTplColEndPos        As Long
+    Dim curTplHeadCell         As Variant
+    Dim curTplContentCell      As Variant
+    Dim lpb As Long
+    Dim genVal As String
+    
+       
+    
+    lngTplColEndPos = Worksheets(tplName).Rows(3).Find("SQL_INSERT", LookIn:=xlValues).Column - 1
+    
+    
+    Dim rowFind As Long
+    rowFind = 5
+    Dim tagEqEntry As String
+    
+    tagEqEntry = TagEqEntry_FUN(colPos)
+    
+    If tagEqEntry = 1 Then
+        rowFind = 6
+    End If
+
+  
+    Dim findObj As Variant
+    
+    Dim curCell As Variant
+    Set curCell = culActiveSheet.Cells(2, colPos)
+    
+    tplWorkBook.Worksheets(tplName).Rows(rowFind).Copy tplWorkBook.Worksheets(tplName + "_temp").Range("A" & colPos)
+    For lpb = SQL_TPL_COL_POS_START To lngTplColEndPos
+      Set curTplHeadCell = tplWorkBook.Worksheets(tplName).Cells(4, lpb)
+      Set curTplContentCell = tplWorkBook.Worksheets(tplName).Cells(5, lpb)
+      If curTplContentCell.Value = "" Then
+          genVal = CallByName(Me, curTplHeadCell.Value + "_FUN", VbMethod, colPos)
+          tplWorkBook.Worksheets(tplName + "_temp").Cells(colPos, lpb).Value = genVal
+      End If
+    Next lpb
+End Function
+
+Public Function seqCodeStartColumn()
+    Dim colsCount As Long
+    colsCount = culActiveSheet.Range("A2").MergeArea.Columns.Count
+    seqCodeStartColumn = colsCount + 1
+End Function
+
+Public Function seqCodeEndColumn()
+    Dim colsCount As Long
+    colsCount = culActiveSheet.Rows(2).Find("", , , xlWhole).Column
+    seqCodeEndColumn = colsCount - 1
+End Function
+
+Public Function IsSheetExist(sheetName As String)
+    Dim ws As Worksheet
+     Application.DisplayAlerts = False
+    On Error Resume Next
+    Set ws = Sheets(sheetName)
+    If ws Is Nothing Then
+        Sheets.Add.Name = sheetName
+    Else
+        ws.Delete
+        Sheets.Add.Name = sheetName
+    End If
+     Application.DisplayAlerts = True
+End Function
+
+Public Sub getSQLTplList()
+  Dim i As Long
+  Dim j As Long
+  j = 1
+  For i = Worksheets.Count To 1 Step -1
+    If isTpl(Sheets(i).Name) Then
+      arrSQL_TPL(j) = Sheets(i).Name
+      j = j + 1
+    End If
+  Next
+'  ReDim arrSQL_TPL(1 To arrSQL_TPL.Count)
+End Sub
+
+Public Function isTpl(sWksName As String)
+    Dim regex As Object
+    Dim matchs As Object, match As Object
+    Dim x As String, y As String
+    Set regex = CreateObject("VBScript.RegExp")
+    With regex
+        .Global = True
+        .Pattern = ".*_TPL$"
+        Set matchs = .Execute(sWksName)
+        If matchs.Count > 0 Then
+            isTpl = True
+        Else
+             isTpl = False
+        End If
+    End With
+End Function
+
+Public Function isDeviceTpl(sWksName As String)
+    Dim regex As Object
+    Dim matchs As Object, match As Object
+    Dim x As String, y As String
+    Set regex = CreateObject("VBScript.RegExp")
+    With regex
+        .Global = True
+        .Pattern = ".*_DEVICE_TPL$"
+        Set matchs = .Execute(sWksName)
+        If matchs.Count > 0 Then
+            isDeviceTpl = True
+        Else
+             isDeviceTpl = False
+        End If
+    End With
+End Function
+
+Public Function RQST_ID_FUN(colPos As Long)
+    Dim curCell As Variant
+    Set curCell = culActiveSheet.Cells(2, colPos)
+    RQST_ID_FUN = ComDataKbn.Text & (sheetCount - 1) & Format(curCell.Value, "000")
+End Function
+
+Public Function DEVICE_CD_FUN(colPos As Long)
+    DEVICE_CD_FUN = ComDeviceCd.Text
+End Function
+
+Public Function ORD_SRVC_INFO_FUN(colPos As Long)
+    Dim curCell As Variant
+    Dim culSheetName As String
+    Dim ord_srvc As String
+    Dim index As Integer
+    
+    culSheetName = culActiveSheet.Name
+    index = InStr(culSheetName, "(")
+    ORD_SRVC_INFO_FUN = Mid(culSheetName, index + 1, 7)
+
+End Function
+
+Public Function FORCE_UPD_FUN(colPos As Long)
+    Dim curCell As Variant
+    FORCE_UPD_FUN = "0"
+    Set curCell = culActiveSheet.Cells(23, colPos)
+    If (curCell.Value = "仜") Then
+        FORCE_UPD_FUN = "1"
+    End If
+End Function
+
+Public Function PROC_NAME_FUN(colPos As Long)
+    If (PRERSP_FUN(colPos) = "1") Then
+        PROC_NAME_FUN = ComProcName.Text
+    Else
+        PROC_NAME_FUN = "        "
+    End If
+End Function
+
+Public Function OMS_NBR_FUN(colPos As Long)
+    OMS_NBR_FUN = RQST_ID_FUN(colPos)
+End Function
+
+Public Function SRVC_STAT_FUN(colPos As Long)
+    Dim curCell As Variant
+    SRVC_STAT_FUN = "1"
+    Set curCell = culActiveSheet.Cells(7, colPos)
+    If (curCell.Value = "仜") Then
+        SRVC_STAT_FUN = "1"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(8, colPos)
+    If (curCell.Value = "仜") Then
+        SRVC_STAT_FUN = "9"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(9, colPos)
+    If (curCell.Value = "仜") Then
+        SRVC_STAT_FUN = "3"
+        Exit Function
+    End If
+End Function
+
+Public Function TagEqEntry_FUN(colPos As Long)
+    Dim curCell As Variant
+    TagEqEntry_FUN = "0"
+    Set curCell = culActiveSheet.Cells(10, colPos)
+    If (curCell.Value = "仜") Then
+        TagEqEntry_FUN = "1"
+    End If
+End Function
+
+
+Public Function ErrorKbn_FUN(colPos As Long)
+    Dim curCell As Variant
+    ErrorKbn_FUN = "0"
+    Set curCell = culActiveSheet.Cells(12, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA1"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(13, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA3"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(14, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA5"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(15, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA6"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(16, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "195F"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(17, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA8"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(18, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FAE"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(19, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA4"
+        Exit Function
+    End If
+    Set curCell = culActiveSheet.Cells(20, colPos)
+    If (curCell.Value = "仜") Then
+        ErrorKbn_FUN = "FA4"
+        Exit Function
+    End If
+End Function
+
+Private Sub CommandButton2_Click()
+    Dim fd As Variant
+    Dim fso As Variant
+
+    Dim allPathFir As String
+    Dim tempData As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set fd = fso.GetFolder(SQL_OUT_DETIL_PATH)
+    Call SearchFiles(fd)
+    
+    Set fd = fso.GetFolder(SQL_OUT_PATH)
+    Call SearchFiles(fd)
+    
+    Set fd = fso.GetFolder(RSLT_OUTPUT_PATH)
+    Call SearchFiles(fd)
+    
+    MsgBox "僼傽僀儖偑嶍彍偟傑偟偨丅", vbOKOnly + vbInformation
+End Sub
+Sub SearchFiles(ByVal fd)
+    Dim fl As Variant
+    For Each fl In fd.Files
+        If fl.Name Like "*.sql" Or fl.Name = "result.csv" Then
+            fl.Delete
+        End If
+    Next fl
+End Sub
+Public Function PRERSP_FUN(colPos As Long)
+    PRERSP_FUN = "0"
+    Dim culCell As Variant
+    Set culCell = culActiveSheet.Cells(21, colPos)
+    If (culCell.Value = "仜") Then
+        PRERSP_FUN = "1"
+    End If
+End Function
+
+Private Sub txtDeviceCd_Change()
+
+End Sub
+
+Private Sub txtProcName_Change()
+
+End Sub
+
+Private Sub CommandButton3_Click()
+    Shell "Explorer.exe D:\VoLTE\TestToolAll\", vbNormalFocus
+End Sub
+
+Private Sub CommandButton4_Click()
+    Shell "cmd.exe /c start " + SQL_PATH
+End Sub
+
+Private Sub CommandButton5_Click()
+    Shell "cmd.exe /c start " + CHECK_PATH
+End Sub
+
+Private Sub UserForm_Activate()
+    With ComDataKbn
+    .AddItem "91"
+    .AddItem "81"
+    .AddItem "71"
+    End With
+    With ComProcName
+    .AddItem "IPVL5501"
+    .AddItem "SLVL5501"
+    .AddItem "MTVL5501"
+    End With
+    With ComDeviceCd
+    .AddItem "IPWK_Y"
+    .AddItem "SLF_H"
+    .AddItem "MTWK_S"
+    End With
+End Sub
+Private Sub ToggleIpwk_Click()
+    ToggleSlf.Value = False
+    ToggleMtas.Value = False
+End Sub
+
+Private Sub ToggleSlf_Click()
+    ToggleIpwk.Value = False
+    ToggleMtas.Value = False
+End Sub
+
+Private Sub ToggleMtas_Click()
+    ToggleSlf.Value = False
+    ToggleIpwk.Value = False
+End Sub
+Private Sub getFrameValue()
+    bolFA1 = FA1.Value
+    bolFA4 = FA4.Value
+    bolSucess = OptSucess.Value
+    bolFA8 = FA8.Value
+    bolFAE = FAE.Value
+    bolFA3 = FA3.Value
+    bolFA5 = FA5.Value
+    bolFA6 = FA6.Value
+    bol195F = F195F.Value
+    bolIpwk = ToggleIpwk.Value
+    bolSlf = ToggleSlf.Value
+    bolMtas = ToggleMtas.Value
+    
+    
+    If bolIpwk Then
+        Set tplWorkBook = Workbooks.Open(IPWK_SQL_TPL_WORKBOOK_NAME)
+    ElseIf bolSlf Then
+        Set tplWorkBook = Workbooks.Open(SLF_SQL_TPL_WORKBOOK_NAME)
+    ElseIf bolMtas Then
+        Set tplWorkBook = Workbooks.Open(MTAS_SQL_TPL_WORKBOOK_NAME)
+    End If
+End Sub
