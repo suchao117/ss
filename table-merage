@@ -1,3 +1,4 @@
+http://codedisplay.com/jquery-to-merge-html-table-row-for-same-group-of-data-using-rowsapn-attribute/
 <script type="text/javascript">
     $(document).ready(function () {
         $('#tblSample').each(function () {
