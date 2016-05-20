@@ -1,0 +1,44 @@
+Script:
+
+Before using the following method, Make sure the data is sorted. The logic is to check row by row if data is same in next row’s td, remove next row’s td and increase rowspan of current row’s td.
+
+?
+$(function() {  
+//Created By: Brij Mohan
+//Website: http://techbrij.com
+function groupTable($rows, startIndex, total){
+if (total === 0){
+return;
+}
+var i , currentIndex = startIndex, count=1, lst=[];
+var tds = $rows.find('td:eq('+ currentIndex +')');
+var ctrl = $(tds[0]);
+lst.push($rows[0]);
+for (i=1;i<=tds.length;i++){
+if (ctrl.text() ==  $(tds[i]).text()){
+count++;
+$(tds[i]).addClass('deleted');
+lst.push($rows[i]);
+}
+else{
+if (count>1){
+ctrl.attr('rowspan',count);
+groupTable($(lst),startIndex+1,total-1)
+}
+count=1;
+lst = [];
+ctrl=$(tds[i]);
+lst.push($rows[i]);
+}
+}
+}
+groupTable($('#myTable tr:has(td)'),0,3);
+$('#myTable .deleted').remove();
+});
+groupTable method has 3 arguments:
+$rows: jQuery object of table rows to be grouped
+startIndex: index of first column to be grouped
+total: total number of columns to be grouped
+
+In above code startIndex =0 and total = 3 it means table is grouped by first, second and third column. After grouping, you need to remove deleted class elements like this:
+$(‘#myTable .deleted’).remove();
