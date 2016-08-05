@@ -1,0 +1,144 @@
+Private KyokuRyaku() As String
+Private KyokuMei() As String
+Private News() As Long
+Private Sports() As Long
+Private Program() As Long
+Private KyokuCode() As String
+Private ActualView() As Long
+Private StartLine() As Long
+Private arrNaiyouOrigin() As String
+Private arrEizoMemoOrigin() As String
+Private arrTantoAll() As String
+
+Sub Sakusei()
+Dim str_Table As String
+Dim str_Field As String
+Dim i_FieldCount As Long
+Dim str_value As String
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FolderExists("c:\TestData") Then
+        fso.CreateFolder ("c:\TestData")
+    End If
+    FileName = "c:\TestData\" & ActiveSheet.Name & ".sql"
+    Open FileName For Output As #1
+    'Sheets(1).Select
+    
+    i_Row = 2
+    FieldName = Trim(Cells(i_Row, 1).Value)
+    'SQLString = ""
+    Do While FieldName <> "END"
+        If FieldName = "" Then
+            FieldName = Trim(Cells(i_Row, 2).Value)
+            If FieldName <> "" Then
+            FieldName = Cells(i_Row, 2).Value
+                'Print #1, Trim(Cells(i_Row, 1).Value)
+                str_value = ""
+                For i = 1 To i_FieldCount
+                    FieldName = Cells(i_Row, i + 1).Value
+                    If i <> 1 Then
+                        str_value = str_value & ", "
+                    End If
+                    If LCase(lFieldName) = "null" Then
+                        str_value = str_value & FieldName
+                    Else
+                        str_value = str_value & QuotedStr(CStr(FieldName))
+                    End If
+                Next
+                Print #1, "insert into " & str_Table & " (" & str_Field & ") values (" & str_value & ");"
+            Else
+                Print #1, ""
+            End If
+        ElseIf InStr(1, FieldName, "--") > 0 Then
+            Print #1, FieldName
+        Else
+            str_Table = FieldName
+            i_FieldCount = 0
+            Print #1, ""
+            Print #1, "--" & FieldName
+            Print #1, "DELETE FROM " & FieldName
+            FieldName = Trim(Cells(i_Row, i_FieldCount + 2).Value)
+            str_Field = ""
+            Do While FieldName <> ""
+                If i_FieldCount <> 0 Then
+                    str_Field = str_Field & ", "
+                End If
+                str_Field = str_Field & FieldName
+                i_FieldCount = i_FieldCount + 1
+                FieldName = Trim(Cells(i_Row, i_FieldCount + 2).Value)
+            Loop
+        End If
+        i_Row = i_Row + 1
+        FieldName = Trim(Cells(i_Row, 1).Value)
+    Loop
+    'Print #1, "commit;"
+    
+    Close #1
+    MsgBox ("データ作成成功しました。")
+    
+End Sub
+
+
+Function GetZenkakuNum(Number As Long)
+Dim Zenkaku(10) As String
+    Zenkaku(0) = "０"
+    Zenkaku(1) = "１"
+    Zenkaku(2) = "２"
+    Zenkaku(3) = "３"
+    Zenkaku(4) = "４"
+    Zenkaku(5) = "５"
+    Zenkaku(6) = "６"
+    Zenkaku(7) = "７"
+    Zenkaku(8) = "８"
+    Zenkaku(9) = "９"
+    GetZenkakuNum = Zenkaku(Number)
+End Function
+
+Function ConverToZenkaku(No As Long) As String
+Dim str_Temp As String
+Dim str_Return As String
+
+    str_Return = ""
+    str_Temp = CStr(No)
+    For i = 1 To Len(str_Temp)
+        str_Return = str_Return & GetZenkakuNum(Mid(str_Temp, i, 1))
+    Next
+ConverToZenkaku = str_Return
+End Function
+
+
+Function QuotedStr(strSource As String) As String
+Dim strReturn As String
+Dim i As Long
+    strReturn = ""
+    For i = 1 To Len(strSource)
+        If Mid(strSource, i, 1) = "'" Then
+            strReturn = strReturn & "'"
+        End If
+        strReturn = strReturn & Mid(strSource, i, 1)
+    Next
+    QuotedStr = "'" & strReturn & "'"
+End Function
+
+
+Function DayAfter(StartDate As String, AfterDay As Long) As String
+
+    If Len(StartDate) <> 8 Or IsNum(StartDate) = False Then
+        MsgBox "error date"
+    End If
+    DayAfter = Replace(CStr(DateAdd("d", AfterDay, CDate(Left(StartDate, 4) & "-" & Mid(StartDate, 5, 2) & "-" & Right(StartDate, 2)))), "/", "")
+End Function
+
+Function IsNum(NumString As String) As Boolean
+Dim i As Long
+Dim iTemp As Integer
+
+On Error GoTo ConvertError:
+    IsNum = True
+    For i = 1 To Len(NumString)
+        iTemp = Mid(NumString, i, 1)
+    Next
+    Exit Function
+ConvertError:
+    IsNum = False
+End Function
