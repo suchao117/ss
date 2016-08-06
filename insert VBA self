@@ -1,0 +1,380 @@
+
+Option Explicit
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+
+
+Private Sub cmdConfirm_Click()
+
+On Error GoTo ErrLine
+
+
+    Dim lngStartNum As Long
+    Dim lngEndNum   As Long
+    
+    Dim strResult1  As String
+    Dim strResult2  As String
+    Dim strResult3  As String
+    Dim strResult4  As String
+    Dim strResult5  As String
+    
+    Dim strResult   As String
+    
+    Dim intIdx      As Long
+    Dim lngLen      As Long
+    Dim lngFreeFile As Long
+    
+    Dim strfPath    As String
+    
+    Dim ConstTableNameCol As String
+    ConstTableNameCol = "A"
+    Dim strTableName As String
+    
+    
+
+    
+    'lngStartNum
+    If Trim(txtStartNum.Text) <> "" Then
+        lngStartNum = CLng(Trim(txtStartNum.Text))
+    Else
+        MsgBox "StartNum"
+        Exit Sub
+    End If
+    
+    'lngEndNum
+    If Trim(txtEndNum.Text) <> "" Then
+        lngEndNum = Trim(txtEndNum.Text)
+        maxRow = lngEndNum
+    Else
+        MsgBox "EndNum"
+        Exit Sub
+    End If
+    
+    strResult1 = "/*  " + "  */"
+    strResult2 = "CREATE TABLE " + " ("
+    
+    lngFreeFile = FreeFile
+    
+    strResult = ""
+    strResult = strResult + strResult1 + vbCrLf
+    strResult = strResult + strResult2 + vbCrLf
+    
+
+    
+    
+    For intIdx = lngStartNum To lngEndNum
+    
+        If isEmptyRow(intIdx) Then
+
+        Else
+          intIdx = createInsertSql(intIdx, strResult)
+        
+        End If
+
+    Next intIdx
+    
+    Dim lngOneFree As Long
+    Dim strOnePath
+    strOnePath = WORK_PATH & "allInOne.sql"
+    lngOneFree = FreeFile
+    Open strOnePath For Output As #lngOneFree
+        Print #lngOneFree, Mid(strResult, 1, Len(strResult) - 2)
+    Close #lngOneFree
+    
+    Exit Sub
+ErrLine:
+    
+    
+    MsgBox Err.Description, vbOKOnly + vbExclamation
+
+    
+End Sub
+
+Public Function seqCodeEndColumn(intRowIdx As Integer)
+    Dim colsCount As Long
+    colsCount = ActiveSheet.Rows(3).Find("", , , xlWhole).Column
+    seqCodeEndColumn = colsCount + 1
+End Function
+
+Public Function isEmptyRow(intRowIdx As Long)
+    Dim strTableName As String
+    
+    isEmptyRow = True
+    strTableName = CStr(ActiveSheet.Range("A" & intRowIdx).Value)
+    If strTableName <> "" Then
+        isEmptyRow = False
+    End If
+
+End Function
+
+
+
+
+
+Public Function getTableName(intRowIdx As Long)
+    Dim pos As Integer
+    Dim strTableName As String
+    
+    strTableName = Trim(CStr(ActiveSheet.Range("A" & intRowIdx).Value))
+    If strTableName <> "" Then
+        pos = InStr(1, strTableName, "table=", 1)
+        If pos > 0 Then
+            strTableName = Mid(strTableName, pos + 6)
+        Else
+            strTableName = ""
+        End If
+    End If
+    getTableName = strTableName
+End Function
+
+Public Function getColumnCount(intRowIdx As Long)
+    Dim colsCount As Long
+    colsCount = ActiveSheet.Rows(intRowIdx).Find("", LookIn:=xlValues).Column - 1
+    getColumnCount = colsCount
+End Function
+
+Public Function getColumns(intRowIdx As Long)
+    Dim lpb As Long
+    Dim colsCount As Long
+    Dim strResult As String
+        
+    colsCount = getColumnCount(intRowIdx)
+    
+    strResult = ""
+    For lpb = 1 To colsCount
+        If lpb <> 1 Then
+            strResult = strResult & ","
+        End If
+      strResult = strResult & ActiveSheet.Cells(intRowIdx, lpb).Value
+    Next lpb
+    
+    getColumns = strResult
+
+End Function
+
+Public Function getValues(intRowIdx As Long, colsCount As Long)
+    Dim lpb As Long
+    Dim str_Field As String
+
+    
+    str_Field = ""
+    For lpb = 1 To colsCount
+        If lpb <> 1 Then
+            str_Field = str_Field & ", "
+        End If
+      str_Field = str_Field & QuotedStr(Trim(CStr(ActiveSheet.Cells(intRowIdx, lpb).Value)))
+    Next lpb
+    
+    getValues = str_Field
+
+End Function
+
+Public Function createInsertSql(intRowIdx As Long, strAllInOne As String)
+    Dim strResult
+    Dim lngOneFree As Long
+    Dim tableName As String
+    Dim colsCount As Long
+    Dim strColumn As String
+    Dim strOnePath As String
+    
+    If intRowIdx + 4 > maxRow Then
+        createInsertSql = intRowIdx
+        Exit Function
+    End If
+      
+    
+    tableName = getTableName(intRowIdx)
+    If tableName <> "" Then
+        intRowIdx = intRowIdx + 2
+        colsCount = getColumnCount(intRowIdx)
+        strColumn = getColumns(intRowIdx)
+        
+        If strColumn <> "" Then
+            intRowIdx = intRowIdx + 2
+            strResult = ""
+            While ActiveSheet.Range("A" & intRowIdx).Value <> "" And getTableName(intRowIdx) = ""
+                strResult = strResult & "insert into " & tableName & " (" & strColumn & ") values (" & getValues(intRowIdx, colsCount) & ");" & vbCrLf
+                intRowIdx = intRowIdx + 1
+            Wend
+            
+            If strResult <> "" Then
+                strOnePath = WORK_PATH & tableName & ".sql"
+                lngOneFree = FreeFile
+                Open strOnePath For Output As #lngOneFree
+                    Print #lngOneFree, Mid(strResult, 1, Len(strResult) - 2)
+                Close #lngOneFree
+                
+                strAllInOne = strAllInOne & strResult
+            End If
+        End If
+    End If
+    createInsertSql = intRowIdx
+End Function
+
+
+
+Private Sub UserForm_Initialize()
+    
+    Dim lngSum  As Long
+    
+    lngSum = 5
+    
+    While ActiveSheet.Range("B" & lngSum).Value <> "" And ActiveSheet.Range("C" & lngSum).Value <> ""
+        lngSum = lngSum + 1
+    Wend
+    
+    If lngSum = 5 Then
+        txtEndNum.Text = lngSum
+    Else
+        txtEndNum.Text = lngSum - 1
+    End If
+
+
+
+End Sub
+
+Private Function callSaveDlg(strDefPath As String) As String
+
+    Dim varOpenFile     As Variant
+    
+    callSaveDlg = ""
+    
+    varOpenFile = Application.GetSaveAsFilename(strDefPath, "僥乕僽儖 僼傽僀儖 (*.tbl),*.tbl,偡傋偰 僼傽僀儖 (*.*),*.*")
+    
+    If varOpenFile <> False Then
+        callSaveDlg = varOpenFile
+    End If
+    
+End Function
+
+Function QuotedStr(strSource As String) As String
+Dim strReturn As String
+Dim i As Long
+    strReturn = ""
+    For i = 1 To Len(strSource)
+        If Mid(strSource, i, 1) = "'" Then
+            strReturn = strReturn & "'"
+        End If
+        strReturn = strReturn & Mid(strSource, i, 1)
+    Next
+    QuotedStr = "'" & strReturn & "'"
+End Function
+
+
+
+Option Explicit
+
+
+'----- basepublic  ------------------------------------------------------------
+Public Const GD_NAME = "SugetsuTest"
+Public Const GD_VERSION = "_1.0"
+Public Const GD_THIS_WORKBOOK_NAME = GD_NAME + GD_VERSION + ".xla"
+
+Public Const WORK_PATH = "C:\JiMuSoft\"
+
+Public maxRow As Long
+
+
+
+Public Sub createTableSQL()
+
+    frmGetTableSQL.Show
+End Sub
+
+Public Sub delMenu()
+
+    On Error Resume Next
+    
+    If MsgBox(GD_NAME & "delete menu", vbYesNoCancel + vbQuestion) <> vbYes Then
+        Exit Sub
+    End If
+    
+    Dim cmdBarTarget    As CommandBar
+    
+    Set cmdBarTarget = Application.CommandBars("Worksheet Menu Bar")
+    cmdBarTarget.Reset
+    ThisWorkbook.Close
+    
+End Sub
+
+
+----------------
+
+Option Explicit
+
+Private Sub Workbook_Open()
+'********************************************************************************
+'           when excel open,add menu to menuBar
+'********************************************************************************
+    Dim cmdBarTarget    As CommandBar
+    Dim objNewMenu      As Object
+    Dim objNewItem      As Object
+    Dim varLoopVar      As Variant
+    Dim intStat         As Integer
+    Dim objNewSubItem   As Object
+
+    On Error Resume Next
+    
+    '/* excel menu bar */
+    Set cmdBarTarget = Application.CommandBars("Worksheet Menu Bar")
+    cmdBarTarget.Visible = True
+    
+    '/* if menu is added */
+    intStat = 0
+    With cmdBarTarget
+        For Each varLoopVar In .Controls
+            If (varLoopVar.Caption = GD_NAME) Then
+                intStat = 1
+                Exit For
+            End If
+        Next varLoopVar
+    End With
+    '/* not add */
+    If (intStat = 0) Then
+        Set objNewMenu = cmdBarTarget.Controls.Add(Type:=msoControlPopup, ID:=1, Temporary:=True)
+        objNewMenu.Caption = GD_NAME
+        intStat = 1
+    '/* the menu added */
+    Else
+        Set objNewMenu = cmdBarTarget.Controls.Item(GD_NAME)
+        With objNewMenu
+            For Each varLoopVar In .Controls
+                If (varLoopVar.Caption = "insert sql") Then
+                    intStat = 2
+                    Exit For
+                End If
+            Next varLoopVar
+            intStat = 1
+        End With
+    End If
+
+    '/*  */
+    If (intStat = 1) Then
+        
+        Set objNewItem = objNewMenu.Controls.Add(Type:=msoControlButton, ID:=1, Temporary:=True)
+        objNewItem.Caption = "inset sql"
+        objNewItem.OnAction = GD_THIS_WORKBOOK_NAME & "!createTableSQL"
+        
+
+    
+        Set objNewItem = objNewMenu.Controls.Add(Type:=msoControlButton, ID:=1, Temporary:=True)
+        objNewItem.Caption = "delete menu"
+        objNewItem.BeginGroup = True
+        objNewItem.OnAction = GD_THIS_WORKBOOK_NAME & "!delMenu"
+    End If
+
+    Call initEnv
+End Sub
+
+Private Sub initEnv()
+Dim FSO
+    Set FSO = CreateObject("Scripting.FileSystemObject")
+    If Not FSO.FolderExists(WORK_PATH) Then
+        FSO.CreateFolder (WORK_PATH)
+    End If
+End Sub
+
+
